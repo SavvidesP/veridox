@@ -85,6 +85,7 @@ export default function Transactions() {
   const [total, setTotal] = useState(0);
   const [showExportModal, setShowExportModal] = useState(false);
   const [selectedCols, setSelectedCols] = useState(ALL_EXPORT_COLUMNS.map(c => c.key));
+  const [exportFilters, setExportFilters] = useState({ dateFrom: '', dateTo: '', brand: 'all', status: 'all', type: 'all', firstName: '', lastName: '' });
   const fileRef = useRef();
   const PAGE_SIZE = 50;
 
@@ -156,11 +157,15 @@ export default function Transactions() {
   async function exportExcel() {
     const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
     let q = supabase.from('transactions').select('*');
-    if (filterBrand !== 'all') q = q.eq('brand_name', filterBrand);
-    if (filterType !== 'all') q = q.eq('type', filterType);
-    if (filterStatus !== 'all') q = q.ilike('transaction_approval', filterStatus);
+    if (exportFilters.brand !== 'all') q = q.eq('brand_name', exportFilters.brand);
+    if (exportFilters.status !== 'all') q = q.ilike('transaction_approval', exportFilters.status);
+    if (exportFilters.type !== 'all') q = q.eq('type', exportFilters.type);
+    if (exportFilters.dateFrom) q = q.gte('created_date', exportFilters.dateFrom);
+    if (exportFilters.dateTo) q = q.lte('created_date', exportFilters.dateTo + 'T23:59:59');
+    if (exportFilters.firstName) q = q.ilike('first_name', `%${exportFilters.firstName}%`);
+    if (exportFilters.lastName) q = q.ilike('last_name', `%${exportFilters.lastName}%`);
     const { data } = await q;
-    if (!data?.length) return;
+    if (!data?.length) { alert('No transactions match your filters.'); return; }
     const activeCols = ALL_EXPORT_COLUMNS.filter(c => selectedCols.includes(c.key));
     const rows = data.map(t => {
       const row = {};
@@ -320,30 +325,82 @@ export default function Transactions() {
 
       {showExportModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'white', borderRadius: '14px', width: '480px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+          <div style={{ background: 'white', borderRadius: '14px', width: '560px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ color: '#0F172A', fontWeight: '700', fontSize: '15px' }}>Choose Columns to Export</div>
-                <div style={{ color: '#64748B', fontSize: '12px', marginTop: '2px' }}>{selectedCols.length} of {ALL_EXPORT_COLUMNS.length} selected</div>
+                <div style={{ color: '#0F172A', fontWeight: '700', fontSize: '15px' }}>Export Transactions</div>
+                <div style={{ color: '#64748B', fontSize: '12px', marginTop: '2px' }}>Filter & choose columns</div>
               </div>
               <button onClick={() => setShowExportModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}><X size={18} /></button>
             </div>
-            <div style={{ padding: '12px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', gap: '10px' }}>
-              <button onClick={() => setSelectedCols(ALL_EXPORT_COLUMNS.map(c => c.key))} style={{ fontSize: '12px', fontWeight: '600', color: '#6366F1', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Select All</button>
-              <span style={{ color: '#E2E8F0' }}>|</span>
-              <button onClick={() => setSelectedCols([])} style={{ fontSize: '12px', fontWeight: '600', color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Clear All</button>
-            </div>
-            <div style={{ overflowY: 'auto', padding: '12px 24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
-              {ALL_EXPORT_COLUMNS.map(col => {
-                const checked = selectedCols.includes(col.key);
-                return (
-                  <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 8px', borderRadius: '6px', cursor: 'pointer', background: checked ? '#EEF2FF' : 'transparent', transition: 'background 0.1s' }}>
-                    <input type="checkbox" checked={checked} onChange={() => setSelectedCols(prev => checked ? prev.filter(k => k !== col.key) : [...prev, col.key])} style={{ display: 'none' }} />
-                    {checked ? <CheckSquare size={15} color="#6366F1" /> : <Square size={15} color="#CBD5E1" />}
-                    <span style={{ fontSize: '12px', color: checked ? '#4338CA' : '#475569', fontWeight: checked ? '600' : '400' }}>{col.label}</span>
-                  </label>
-                );
-              })}
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              <div style={{ padding: '16px 24px', borderBottom: '1px solid #F1F5F9' }}>
+                <div style={{ color: '#0F172A', fontSize: '12px', fontWeight: '700', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Filters</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>Date From</label>
+                    <input type="date" value={exportFilters.dateFrom} onChange={e => setExportFilters(f => ({ ...f, dateFrom: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>Date To</label>
+                    <input type="date" value={exportFilters.dateTo} onChange={e => setExportFilters(f => ({ ...f, dateTo: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>Brand</label>
+                    <select value={exportFilters.brand} onChange={e => setExportFilters(f => ({ ...f, brand: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}>
+                      <option value="all">All Brands</option>
+                      {brands.map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>Status</label>
+                    <select value={exportFilters.status} onChange={e => setExportFilters(f => ({ ...f, status: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}>
+                      <option value="all">All Statuses</option>
+                      <option value="Success">Approved</option>
+                      <option value="Failed">Declined</option>
+                      <option value="Pending">Pending</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>Type</label>
+                    <select value={exportFilters.type} onChange={e => setExportFilters(f => ({ ...f, type: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}>
+                      <option value="all">All Types</option>
+                      <option value="Deposit">Deposit</option>
+                      <option value="Withdrawal">Withdrawal</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>First Name</label>
+                    <input type="text" placeholder="e.g. James" value={exportFilters.firstName} onChange={e => setExportFilters(f => ({ ...f, firstName: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif' }} />
+                  </div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>Last Name</label>
+                    <input type="text" placeholder="e.g. Smith" value={exportFilters.lastName} onChange={e => setExportFilters(f => ({ ...f, lastName: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif' }} />
+                  </div>
+                </div>
+                <button onClick={() => setExportFilters({ dateFrom: '', dateTo: '', brand: 'all', status: 'all', type: 'all', firstName: '', lastName: '' })} style={{ marginTop: '10px', fontSize: '12px', color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Clear filters</button>
+              </div>
+              <div style={{ padding: '16px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                  <div style={{ color: '#0F172A', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Columns ({selectedCols.length}/{ALL_EXPORT_COLUMNS.length})</div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button onClick={() => setSelectedCols(ALL_EXPORT_COLUMNS.map(c => c.key))} style={{ fontSize: '12px', fontWeight: '600', color: '#6366F1', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Select All</button>
+                    <button onClick={() => setSelectedCols([])} style={{ fontSize: '12px', fontWeight: '600', color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Clear All</button>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+                  {ALL_EXPORT_COLUMNS.map(col => {
+                    const checked = selectedCols.includes(col.key);
+                    return (
+                      <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 8px', borderRadius: '6px', cursor: 'pointer', background: checked ? '#EEF2FF' : 'transparent', transition: 'background 0.1s' }}>
+                        <input type="checkbox" checked={checked} onChange={() => setSelectedCols(prev => checked ? prev.filter(k => k !== col.key) : [...prev, col.key])} style={{ display: 'none' }} />
+                        {checked ? <CheckSquare size={15} color="#6366F1" /> : <Square size={15} color="#CBD5E1" />}
+                        <span style={{ fontSize: '12px', color: checked ? '#4338CA' : '#475569', fontWeight: checked ? '600' : '400' }}>{col.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid #E2E8F0', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button onClick={() => setShowExportModal(false)} style={{ padding: '9px 20px', border: '1px solid #E2E8F0', borderRadius: '8px', background: 'white', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>Cancel</button>
