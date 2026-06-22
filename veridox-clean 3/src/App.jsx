@@ -8,6 +8,7 @@ import ClientProfile from './pages/ClientProfile';
 import KYCPipeline from './pages/KYCPipeline';
 import AddClient from './pages/AddClient';
 import Settings from './pages/Settings';
+import Transactions from './pages/Transactions';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -31,6 +32,7 @@ function App() {
         <Route path="/pipeline" element={<ProtectedRoute><Layout><KYCPipeline /></Layout></ProtectedRoute>} />
         <Route path="/add-client" element={<ProtectedRoute><Layout><AddClient /></Layout></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Layout><Settings /></Layout></ProtectedRoute>} />
+        <Route path="/transactions" element={<ProtectedRoute><Layout><Transactions /></Layout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </BrowserRouter>
