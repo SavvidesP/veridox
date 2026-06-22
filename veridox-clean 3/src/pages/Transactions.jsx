@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Upload, Download, FileText, Search, Filter, X } from 'lucide-react';
+import { Upload, Download, FileText, Search, X, CheckSquare, Square } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const COLUMNS = [
@@ -16,6 +16,35 @@ const COLUMNS = [
   { key: 'payment_method', label: 'Payment Method' },
   { key: 'psp_actual', label: 'PSP' },
   { key: 'transaction_approval', label: 'Status' },
+  { key: 'country_group', label: 'Country' },
+];
+
+const ALL_EXPORT_COLUMNS = [
+  { key: 'created_date', label: 'Date' },
+  { key: 'confirmation_date', label: 'Confirmation Date' },
+  { key: 'transaction_id', label: 'Transaction ID' },
+  { key: 'brand_name', label: 'Brand' },
+  { key: 'first_name', label: 'First Name' },
+  { key: 'last_name', label: 'Last Name' },
+  { key: 'deposit_owner', label: 'Deposit Owner' },
+  { key: 'account_no', label: 'Account No.' },
+  { key: 'type', label: 'Type' },
+  { key: 'account_currency', label: 'Currency' },
+  { key: 'amount', label: 'Amount' },
+  { key: 'usd_amount', label: 'USD Amount' },
+  { key: 'exchange_rate', label: 'Exchange Rate' },
+  { key: 'net_deposit', label: 'Net Deposit' },
+  { key: 'payment_method', label: 'Payment Method' },
+  { key: 'payment_processor', label: 'Payment Processor' },
+  { key: 'sub_psp', label: 'Sub PSP' },
+  { key: 'psp_actual', label: 'PSP' },
+  { key: 'psp_actual_category', label: 'PSP Category' },
+  { key: 'psp_transaction_id', label: 'PSP Transaction ID' },
+  { key: 'cleared_by_name', label: 'Cleared By' },
+  { key: 'sub_psp_transaction_id', label: 'Sub PSP Transaction ID' },
+  { key: 'transaction_approval', label: 'Status' },
+  { key: 'department', label: 'Department' },
+  { key: 'department_type', label: 'Department Type' },
   { key: 'country_group', label: 'Country' },
 ];
 
@@ -54,6 +83,8 @@ export default function Transactions() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [selectedCols, setSelectedCols] = useState(ALL_EXPORT_COLUMNS.map(c => c.key));
   const fileRef = useRef();
   const PAGE_SIZE = 50;
 
@@ -114,7 +145,6 @@ export default function Transactions() {
       country_group: r['country_group'] || null,
     }));
 
-    // Insert in batches of 500
     for (let i = 0; i < mapped.length; i += 500) {
       await supabase.from('transactions').insert(mapped.slice(i, i + 500));
     }
@@ -131,26 +161,22 @@ export default function Transactions() {
     if (filterStatus !== 'all') q = q.ilike('transaction_approval', filterStatus);
     const { data } = await q;
     if (!data?.length) return;
-    const rows = data.map(t => ({
-      'Date': formatDate(t.created_date),
-      'Transaction ID': t.transaction_id,
-      'Brand': t.brand_name,
-      'First Name': t.first_name,
-      'Last Name': t.last_name,
-      'Account No.': t.account_no,
-      'Type': t.type,
-      'Currency': t.account_currency,
-      'Amount': t.amount,
-      'USD Amount': t.usd_amount,
-      'Payment Method': t.payment_method,
-      'PSP': t.psp_actual,
-      'Status': t.transaction_approval,
-      'Country': t.country_group,
-    }));
+    const activeCols = ALL_EXPORT_COLUMNS.filter(c => selectedCols.includes(c.key));
+    const rows = data.map(t => {
+      const row = {};
+      activeCols.forEach(col => {
+        const v = t[col.key];
+        if (col.key === 'created_date' || col.key === 'confirmation_date') row[col.label] = formatDate(v);
+        else if (col.key === 'amount' || col.key === 'usd_amount' || col.key === 'exchange_rate' || col.key === 'net_deposit') row[col.label] = v;
+        else row[col.label] = v || '';
+      });
+      return row;
+    });
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
     XLSX.writeFile(wb, `veridox-transactions-${new Date().toISOString().slice(0,10)}.xlsx`);
+    setShowExportModal(false);
   }
 
   async function downloadStatement(brand) {
@@ -176,7 +202,6 @@ export default function Transactions() {
     const totalWithdrawals = data.filter(t => t.type?.toLowerCase() === 'withdrawal').reduce((s, t) => s + (t.amount || 0), 0);
     const successful = data.filter(t => t.transaction_approval?.toLowerCase() === 'success').length;
 
-    // Summary sheet
     const summary = [
       { 'Field': 'Company', 'Value': brand },
       { 'Field': 'Statement Date', 'Value': new Date().toLocaleDateString() },
@@ -197,7 +222,6 @@ export default function Transactions() {
 
   return (
     <div style={{ padding: '32px', fontFamily: "'Inter', sans-serif" }}>
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div>
           <h1 style={{ color: '#0F172A', fontSize: '22px', fontWeight: '700', margin: 0, letterSpacing: '-0.5px' }}>Transactions</h1>
@@ -208,13 +232,12 @@ export default function Transactions() {
             <Upload size={14} /> {importing ? 'Importing...' : 'Import Excel'}
           </button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} />
-          <button onClick={exportExcel} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: 'white', cursor: 'pointer' }}>
+          <button onClick={() => setShowExportModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: 'white', cursor: 'pointer' }}>
             <Download size={14} /> Export Excel
           </button>
         </div>
       </div>
 
-      {/* Filters */}
       <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative' }}>
           <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
@@ -235,8 +258,6 @@ export default function Transactions() {
           <option value="Failed">Failed</option>
           <option value="Pending">Pending</option>
         </select>
-
-        {/* Statement download per brand */}
         {filterBrand !== 'all' && (
           <button onClick={() => downloadStatement(filterBrand)} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 14px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#166534', cursor: 'pointer' }}>
             <FileText size={14} /> Download Statement for {filterBrand}
@@ -244,7 +265,6 @@ export default function Transactions() {
         )}
       </div>
 
-      {/* Statement buttons for each brand */}
       {brands.length > 0 && filterBrand === 'all' && (
         <div style={{ marginBottom: '16px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <span style={{ color: '#64748B', fontSize: '12px', fontWeight: '600', alignSelf: 'center' }}>Statements:</span>
@@ -256,7 +276,6 @@ export default function Transactions() {
         </div>
       )}
 
-      {/* Table */}
       <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1100px' }}>
           <thead>
@@ -299,7 +318,44 @@ export default function Transactions() {
         </table>
       </div>
 
-      {/* Pagination */}
+      {showExportModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'white', borderRadius: '14px', width: '480px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ color: '#0F172A', fontWeight: '700', fontSize: '15px' }}>Choose Columns to Export</div>
+                <div style={{ color: '#64748B', fontSize: '12px', marginTop: '2px' }}>{selectedCols.length} of {ALL_EXPORT_COLUMNS.length} selected</div>
+              </div>
+              <button onClick={() => setShowExportModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}><X size={18} /></button>
+            </div>
+            <div style={{ padding: '12px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', gap: '10px' }}>
+              <button onClick={() => setSelectedCols(ALL_EXPORT_COLUMNS.map(c => c.key))} style={{ fontSize: '12px', fontWeight: '600', color: '#6366F1', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Select All</button>
+              <span style={{ color: '#E2E8F0' }}>|</span>
+              <button onClick={() => setSelectedCols([])} style={{ fontSize: '12px', fontWeight: '600', color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Clear All</button>
+            </div>
+            <div style={{ overflowY: 'auto', padding: '12px 24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+              {ALL_EXPORT_COLUMNS.map(col => {
+                const checked = selectedCols.includes(col.key);
+                return (
+                  <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 8px', borderRadius: '6px', cursor: 'pointer', background: checked ? '#EEF2FF' : 'transparent', transition: 'background 0.1s' }}>
+                    <input type="checkbox" checked={checked} onChange={() => setSelectedCols(prev => checked ? prev.filter(k => k !== col.key) : [...prev, col.key])} style={{ display: 'none' }} />
+                    {checked ? <CheckSquare size={15} color="#6366F1" /> : <Square size={15} color="#CBD5E1" />}
+                    <span style={{ fontSize: '12px', color: checked ? '#4338CA' : '#475569', fontWeight: checked ? '600' : '400' }}>{col.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #E2E8F0', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowExportModal(false)} style={{ padding: '9px 20px', border: '1px solid #E2E8F0', borderRadius: '8px', background: 'white', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={exportExcel} disabled={selectedCols.length === 0} style={{ padding: '9px 20px', background: selectedCols.length === 0 ? '#E2E8F0' : 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: selectedCols.length === 0 ? '#94A3B8' : 'white', cursor: selectedCols.length === 0 ? 'not-allowed' : 'pointer' }}>
+                <Download size={13} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} />
+                Export {selectedCols.length} Columns
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {totalPages > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '16px' }}>
           <span style={{ color: '#64748B', fontSize: '13px' }}>Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total.toLocaleString()}</span>
