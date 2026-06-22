@@ -167,23 +167,32 @@ export default function Transactions() {
     const { data } = await q;
     if (!data?.length) { alert('No transactions match your filters.'); setExporting(false); return; }
 
-    // Fetch exchange rates for unique date+currency combos (excluding USD)
+    // Fetch historical rate for each unique date+currency combo
     const rateMap = {};
-    const uniquePairs = [...new Set(
+    const uniqueCombos = [...new Map(
       data
         .filter(t => t.account_currency && t.account_currency !== 'USD' && t.created_date)
-        .map(t => `${t.created_date.slice(0, 10)}_${t.account_currency}`)
-    )];
-    await Promise.all(uniquePairs.map(async pair => {
-      const [date, currency] = pair.split('_');
-      try {
-        const res = await fetch(`https://api.frankfurter.app/${date}?from=${currency}&to=USD`);
-        const json = await res.json();
-        rateMap[pair] = json.rates?.USD || null;
-      } catch {
-        rateMap[pair] = null;
-      }
-    }));
+        .map(t => {
+          const date = String(t.created_date).slice(0, 10);
+          const key = `${date}|${t.account_currency}`;
+          return [key, { date, currency: t.account_currency, key }];
+        })
+    ).values()];
+
+    // Fetch in batches of 5 to avoid overwhelming the API
+    for (let i = 0; i < uniqueCombos.length; i += 5) {
+      const batch = uniqueCombos.slice(i, i + 5);
+      await Promise.all(batch.map(async ({ date, currency, key }) => {
+        try {
+          const res = await fetch(`https://api.frankfurter.app/${date}?from=${currency}&to=USD`);
+          if (!res.ok) { rateMap[key] = null; return; }
+          const json = await res.json();
+          rateMap[key] = json.rates?.USD ?? null;
+        } catch {
+          rateMap[key] = null;
+        }
+      }));
+    }
 
     const activeCols = ALL_EXPORT_COLUMNS.filter(c => selectedCols.includes(c.key));
     const rows = data.map(t => {
@@ -194,12 +203,13 @@ export default function Transactions() {
         else if (col.key === 'amount' || col.key === 'usd_amount' || col.key === 'exchange_rate' || col.key === 'net_deposit') row[col.label] = v;
         else row[col.label] = v || '';
       });
+      const amt = parseFloat(t.amount) || 0;
       if (t.account_currency === 'USD') {
-        row['Amount (USD)'] = t.amount;
+        row['Amount (USD)'] = parseFloat(amt.toFixed(2));
       } else if (t.account_currency && t.created_date) {
-        const key = `${t.created_date.slice(0, 10)}_${t.account_currency}`;
+        const key = `${String(t.created_date).slice(0, 10)}|${t.account_currency}`;
         const rate = rateMap[key];
-        row['Amount (USD)'] = rate ? parseFloat((t.amount * rate).toFixed(2)) : 'N/A';
+        row['Amount (USD)'] = rate ? parseFloat((amt * rate).toFixed(2)) : 'N/A';
       } else {
         row['Amount (USD)'] = 'N/A';
       }
@@ -355,7 +365,7 @@ export default function Transactions() {
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ color: '#0F172A', fontWeight: '700', fontSize: '15px' }}>Export Transactions</div>
-                <div style={{ color: '#64748B', fontSize: '12px', marginTop: '2px' }}>Filter & choose columns — Amount (USD) auto-calculated</div>
+                <div style={{ color: '#64748B', fontSize: '12px', marginTop: '2px' }}>Filter & choose columns — Amount (USD) uses rate from transaction date</div>
               </div>
               <button onClick={() => setShowExportModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}><X size={18} /></button>
             </div>
