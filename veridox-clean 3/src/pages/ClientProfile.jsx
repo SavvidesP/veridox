@@ -1,227 +1,159 @@
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, CheckCircle, XCircle, Clock, MessageSquare, Activity, Mail, Phone, Building2, Globe } from 'lucide-react';
-import { clients } from '../data/mockData';
+import { ArrowLeft, FileText, MessageSquare, Clock, CheckCircle, XCircle, AlertTriangle, Plus } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
-const kycBadge = (status) => {
-  const styles = {
-    approved: { background: '#DCFCE7', color: '#166534', border: '1px solid #BBF7D0' },
-    under_review: { background: '#FEF9C3', color: '#854D0E', border: '1px solid #FDE68A' },
-    pending: { background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0' },
-    rejected: { background: '#FEE2E2', color: '#991B1B', border: '1px solid #FECACA' },
-  };
-  const labels = { approved: 'Approved', under_review: 'Under Review', pending: 'Pending', rejected: 'Rejected' };
-  return (
-    <span style={{ ...styles[status], padding: '5px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: '700' }}>
-      {labels[status]}
-    </span>
-  );
-};
-
-const docStatusIcon = (status) => {
-  if (status === 'verified') return <CheckCircle size={15} color="#16A34A" />;
-  if (status === 'rejected') return <XCircle size={15} color="#E11D48" />;
-  return <Clock size={15} color="#D97706" />;
-};
-
-const card = {
-  background: 'white',
-  borderRadius: '12px',
-  border: '1px solid #E2E8F0',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-  marginBottom: '16px',
-  overflow: 'hidden',
-};
-
-const cardHeader = {
-  padding: '16px 20px',
-  borderBottom: '1px solid #F1F5F9',
-  display: 'flex', alignItems: 'center', gap: '8px',
+const statusConfig = {
+  pending: { label: 'Pending', bg: '#F1F5F9', color: '#475569' },
+  under_review: { label: 'Under Review', bg: '#FEF9C3', color: '#854D0E' },
+  approved: { label: 'Approved', bg: '#DCFCE7', color: '#166534' },
+  rejected: { label: 'Rejected', bg: '#FEE2E2', color: '#991B1B' },
 };
 
 export default function ClientProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const client = clients.find(c => c.id === parseInt(id));
+  const { user } = useAuth();
+  const [client, setClient] = useState(null);
+  const [documents, setDocuments] = useState([]);
+  const [notes, setNotes] = useState([]);
+  const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newNote, setNewNote] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
 
-  if (!client) return <div style={{ padding: '32px', color: '#64748B' }}>Client not found.</div>;
+  useEffect(() => {
+    Promise.all([
+      supabase.from('clients').select('*').eq('id', id).single(),
+      supabase.from('documents').select('*').eq('client_id', id).order('uploaded_at', { ascending: false }),
+      supabase.from('notes').select('*').eq('client_id', id).order('created_at', { ascending: false }),
+      supabase.from('activities').select('*').eq('client_id', id).order('created_at', { ascending: false }),
+    ]).then(([c, d, n, a]) => {
+      setClient(c.data);
+      setDocuments(d.data || []);
+      setNotes(n.data || []);
+      setActivities(a.data || []);
+      setLoading(false);
+    });
+  }, [id]);
+
+  const updateStatus = async (newStatus) => {
+    await supabase.from('clients').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id);
+    await supabase.from('activities').insert({ client_id: id, action: 'Status Changed', description: `Status updated to ${newStatus}`, created_by: user?.id });
+    setClient(prev => ({ ...prev, status: newStatus }));
+    setActivities(prev => [{ id: Date.now(), action: 'Status Changed', description: `Status updated to ${newStatus}`, created_at: new Date().toISOString() }, ...prev]);
+  };
+
+  const addNote = async () => {
+    if (!newNote.trim()) return;
+    setSavingNote(true);
+    const { data } = await supabase.from('notes').insert({ client_id: id, content: newNote, created_by: user?.id }).select().single();
+    if (data) setNotes(prev => [data, ...prev]);
+    setNewNote('');
+    setSavingNote(false);
+  };
+
+  if (loading) return <div style={{ padding: '32px', color: '#64748B', fontSize: '13px', fontFamily: 'Inter, sans-serif' }}>Loading...</div>;
+  if (!client) return <div style={{ padding: '32px', color: '#64748B', fontSize: '13px', fontFamily: 'Inter, sans-serif' }}>Client not found.</div>;
+
+  const sc = statusConfig[client.status] || statusConfig.pending;
 
   return (
-    <div style={{ padding: '32px', fontFamily: "'Inter', sans-serif" }}>
-      {/* Back */}
-      <button
-        onClick={() => navigate('/clients')}
-        style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#64748B', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', marginBottom: '20px', fontFamily: 'Inter, sans-serif' }}
-      >
+    <div style={{ padding: '32px', fontFamily: 'Inter, sans-serif' }}>
+      <button onClick={() => navigate('/clients')} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#64748B', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', marginBottom: '20px', fontFamily: 'Inter, sans-serif' }}>
         <ArrowLeft size={15} /> Back to Clients
       </button>
 
-      {/* Header Card */}
-      <div style={{ ...card, marginBottom: '20px' }}>
-        <div style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <div style={{
-                width: '56px', height: '56px',
-                background: `hsl(${client.id * 60}, 70%, 95%)`,
-                borderRadius: '14px',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: `hsl(${client.id * 60}, 70%, 35%)`,
-                fontSize: '18px', fontWeight: '800',
-              }}>
-                {client.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-              </div>
-              <div>
-                <h1 style={{ color: '#0F172A', fontSize: '20px', fontWeight: '700', margin: 0, letterSpacing: '-0.3px' }}>{client.name}</h1>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '6px', flexWrap: 'wrap' }}>
-                  <span style={{ color: '#64748B', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '4px' }}><Mail size={12} />{client.email}</span>
-                  <span style={{ color: '#64748B', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '4px' }}><Phone size={12} />{client.phone}</span>
-                </div>
-              </div>
+      {/* Header */}
+      <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '24px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ width: '56px', height: '56px', background: '#EEF2FF', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6366F1', fontSize: '18px', fontWeight: '700' }}>
+              {(client.first_name?.[0] || '') + (client.last_name?.[0] || '')}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              {kycBadge(client.kycStatus)}
-              <select style={{
-                padding: '7px 12px', borderRadius: '8px', border: '1px solid #E2E8F0',
-                fontSize: '12px', fontWeight: '600', color: '#475569', background: 'white',
-                cursor: 'pointer', outline: 'none', fontFamily: 'Inter, sans-serif',
-              }}>
-                <option>Change Status</option>
-                <option>Pending</option>
-                <option>Under Review</option>
-                <option>Approve</option>
-                <option>Reject</option>
-              </select>
+            <div>
+              <h1 style={{ color: '#0F172A', fontSize: '20px', fontWeight: '700', margin: '0 0 4px', letterSpacing: '-0.3px' }}>{client.first_name} {client.last_name}</h1>
+              <div style={{ color: '#64748B', fontSize: '13px' }}>{client.company_name} · {client.country}</div>
+              {client.email && <div style={{ color: '#94A3B8', fontSize: '12px', marginTop: '2px' }}>{client.email}</div>}
             </div>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ background: sc.bg, color: sc.color, padding: '5px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' }}>{sc.label}</span>
+          </div>
+        </div>
 
-          {/* Details row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1px', marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #F1F5F9' }}>
-            {[
-              { icon: Building2, label: 'Company', value: client.company },
-              { icon: Globe, label: 'Country', value: client.country },
-              { icon: FileText, label: 'Industry', value: client.industry },
-              { icon: Clock, label: 'Client Since', value: client.createdAt },
-            ].map(({ icon: Icon, label, value }) => (
-              <div key={label} style={{ padding: '0 16px', borderRight: '1px solid #F1F5F9' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#94A3B8', fontSize: '11px', fontWeight: '600', letterSpacing: '0.3px', textTransform: 'uppercase', marginBottom: '4px' }}>
-                  <Icon size={11} />{label}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #F1F5F9' }}>
+          <span style={{ color: '#64748B', fontSize: '12px', fontWeight: '600', marginRight: '4px' }}>Update status:</span>
+          {['pending', 'under_review', 'approved', 'rejected'].map(s => (
+            <button key={s} onClick={() => updateStatus(s)} style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '11px', fontWeight: '600', cursor: 'pointer', background: client.status === s ? statusConfig[s].bg : 'white', color: client.status === s ? statusConfig[s].color : '#64748B', fontFamily: 'Inter, sans-serif' }}>
+              {statusConfig[s].label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '20px' }}>
+        {/* Left: documents + notes */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Documents */}
+          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ color: '#0F172A', fontSize: '14px', fontWeight: '700' }}>Documents</div>
+            </div>
+            {documents.length === 0 ? (
+              <div style={{ color: '#94A3B8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No documents uploaded yet.</div>
+            ) : documents.map(doc => (
+              <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '32px', height: '32px', background: '#F1F5F9', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <FileText size={15} color="#64748B" />
+                  </div>
+                  <div>
+                    <div style={{ color: '#0F172A', fontSize: '13px', fontWeight: '600' }}>{doc.name}</div>
+                    <div style={{ color: '#94A3B8', fontSize: '11px' }}>{new Date(doc.uploaded_at).toLocaleDateString()}</div>
+                  </div>
                 </div>
-                <div style={{ color: '#0F172A', fontSize: '13px', fontWeight: '600' }}>{value}</div>
+                <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', background: doc.status === 'approved' ? '#DCFCE7' : doc.status === 'rejected' ? '#FEE2E2' : '#F1F5F9', color: doc.status === 'approved' ? '#166534' : doc.status === 'rejected' ? '#991B1B' : '#475569' }}>{doc.status}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Notes */}
+          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <div style={{ color: '#0F172A', fontSize: '14px', fontWeight: '700', marginBottom: '16px' }}>Notes</div>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <input value={newNote} onChange={e => setNewNote(e.target.value)} placeholder="Add a note..." onKeyDown={e => e.key === 'Enter' && addNote()} style={{ flex: 1, padding: '9px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', color: '#0F172A', outline: 'none', fontFamily: 'Inter, sans-serif' }} onFocus={e => e.target.style.borderColor = '#6366F1'} onBlur={e => e.target.style.borderColor = '#E2E8F0'} />
+              <button onClick={addNote} disabled={savingNote} style={{ padding: '9px 16px', background: '#6366F1', color: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>Add</button>
+            </div>
+            {notes.length === 0 ? (
+              <div style={{ color: '#94A3B8', fontSize: '13px', textAlign: 'center', padding: '16px 0' }}>No notes yet.</div>
+            ) : notes.map(note => (
+              <div key={note.id} style={{ padding: '12px', background: '#F8FAFC', borderRadius: '8px', marginBottom: '8px', border: '1px solid #F1F5F9' }}>
+                <div style={{ color: '#0F172A', fontSize: '13px', lineHeight: '1.5' }}>{note.content}</div>
+                <div style={{ color: '#94A3B8', fontSize: '11px', marginTop: '4px' }}>{new Date(note.created_at).toLocaleString()}</div>
               </div>
             ))}
           </div>
         </div>
-      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '16px' }}>
-        <div>
-          {/* Documents */}
-          <div style={card}>
-            <div style={cardHeader}>
-              <FileText size={15} color="#6366F1" />
-              <span style={{ color: '#0F172A', fontSize: '13px', fontWeight: '700' }}>KYC Documents</span>
+        {/* Right: activity */}
+        <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', height: 'fit-content' }}>
+          <div style={{ color: '#0F172A', fontSize: '14px', fontWeight: '700', marginBottom: '16px' }}>Activity Log</div>
+          {activities.length === 0 ? (
+            <div style={{ color: '#94A3B8', fontSize: '13px', textAlign: 'center', padding: '16px 0' }}>No activity yet.</div>
+          ) : activities.map((act, i) => (
+            <div key={act.id} style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+              <div style={{ width: '28px', height: '28px', background: '#EEF2FF', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Clock size={12} color="#6366F1" />
+              </div>
+              <div>
+                <div style={{ color: '#0F172A', fontSize: '13px', fontWeight: '600' }}>{act.action}</div>
+                {act.description && <div style={{ color: '#64748B', fontSize: '12px', marginTop: '2px' }}>{act.description}</div>}
+                <div style={{ color: '#94A3B8', fontSize: '11px', marginTop: '2px' }}>{new Date(act.created_at).toLocaleString()}</div>
+              </div>
             </div>
-            <div style={{ padding: '16px 20px' }}>
-              {client.documents.length === 0 ? (
-                <p style={{ color: '#94A3B8', fontSize: '13px', margin: 0 }}>No documents submitted yet.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-                  {client.documents.map((doc, i) => (
-                    <div key={i} style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '12px 14px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0',
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        {docStatusIcon(doc.status)}
-                        <div>
-                          <div style={{ color: '#0F172A', fontSize: '13px', fontWeight: '600' }}>{doc.name}</div>
-                          <div style={{ color: '#94A3B8', fontSize: '11px' }}>{doc.uploadedAt ? `Uploaded ${doc.uploadedAt}` : 'Not yet uploaded'}</div>
-                        </div>
-                      </div>
-                      <span style={{
-                        padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600',
-                        background: doc.status === 'verified' ? '#DCFCE7' : doc.status === 'rejected' ? '#FEE2E2' : '#FEF9C3',
-                        color: doc.status === 'verified' ? '#166534' : doc.status === 'rejected' ? '#991B1B' : '#854D0E',
-                      }}>
-                        {doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <button style={{ color: '#6366F1', fontSize: '12px', fontWeight: '600', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'Inter, sans-serif' }}>
-                + Request document
-              </button>
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div style={card}>
-            <div style={cardHeader}>
-              <MessageSquare size={15} color="#6366F1" />
-              <span style={{ color: '#0F172A', fontSize: '13px', fontWeight: '700' }}>Notes</span>
-            </div>
-            <div style={{ padding: '16px 20px' }}>
-              {client.notes.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
-                  {client.notes.map((note, i) => (
-                    <div key={i} style={{ padding: '12px 14px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span style={{ color: '#6366F1', fontSize: '12px', fontWeight: '700' }}>{note.author}</span>
-                        <span style={{ color: '#94A3B8', fontSize: '11px' }}>{note.date}</span>
-                      </div>
-                      <p style={{ color: '#475569', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>{note.text}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <textarea
-                placeholder="Add a compliance note..."
-                rows={3}
-                style={{
-                  width: '100%', boxSizing: 'border-box',
-                  padding: '10px 12px', borderRadius: '8px', border: '1px solid #E2E8F0',
-                  fontSize: '13px', color: '#0F172A', resize: 'none', outline: 'none',
-                  fontFamily: 'Inter, sans-serif',
-                }}
-              />
-              <button style={{
-                marginTop: '8px',
-                background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
-                color: 'white', border: 'none', borderRadius: '7px',
-                padding: '8px 16px', fontSize: '12px', fontWeight: '600', cursor: 'pointer',
-                fontFamily: 'Inter, sans-serif',
-              }}>
-                Add Note
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Activity */}
-        <div style={{ ...card, height: 'fit-content' }}>
-          <div style={cardHeader}>
-            <Activity size={15} color="#6366F1" />
-            <span style={{ color: '#0F172A', fontSize: '13px', fontWeight: '700' }}>Activity Timeline</span>
-          </div>
-          <div style={{ padding: '16px 20px' }}>
-            <div style={{ position: 'relative', paddingLeft: '20px', borderLeft: '2px solid #E2E8F0' }}>
-              {client.activity.map((item, i) => (
-                <div key={i} style={{ position: 'relative', paddingBottom: '16px' }}>
-                  <div style={{
-                    position: 'absolute', left: '-25px', top: '3px',
-                    width: '10px', height: '10px',
-                    background: i === 0 ? '#6366F1' : '#E2E8F0',
-                    borderRadius: '50%',
-                    border: '2px solid white',
-                    boxShadow: '0 0 0 2px ' + (i === 0 ? '#6366F1' : '#E2E8F0'),
-                  }} />
-                  <div style={{ color: '#0F172A', fontSize: '12px', fontWeight: '600' }}>{item.event}</div>
-                  <div style={{ color: '#94A3B8', fontSize: '11px', marginTop: '2px' }}>{item.date}</div>
-                </div>
-              ))}
-            </div>
-          </div>
+          ))}
         </div>
       </div>
     </div>

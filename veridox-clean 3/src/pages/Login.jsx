@@ -1,93 +1,41 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('maria@veridox.net');
-  const [password, setPassword] = useState('demo1234');
+  const { signIn } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loggingIn, setLoggingIn] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    navigate('/dashboard');
+    setError('');
+    setLoggingIn(true);
+    const { error: err } = await signIn(email, password);
+    if (err) {
+      setError('Invalid email or password.');
+      setLoggingIn(false);
+    } else {
+      navigate('/dashboard');
+    }
   };
 
   const s = {
-    page: {
-      minHeight: '100vh',
-      background: '#0F172A',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontFamily: "'Inter', sans-serif",
-      position: 'relative',
-      overflow: 'hidden',
-    },
-    glow: {
-      position: 'absolute',
-      width: '600px',
-      height: '600px',
-      borderRadius: '50%',
-      background: 'radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%)',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%)',
-      pointerEvents: 'none',
-    },
-    card: {
-      background: '#1E293B',
-      border: '1px solid #334155',
-      borderRadius: '16px',
-      padding: '40px',
-      width: '380px',
-      position: 'relative',
-      zIndex: 1,
-      boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
-    },
-    logo: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '10px',
-      marginBottom: '32px',
-    },
-    logoIcon: {
-      width: '44px', height: '44px',
-      background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
-      borderRadius: '50%',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    },
+    page: { minHeight: '100vh', background: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter', sans-serif", position: 'relative', overflow: 'hidden' },
+    glow: { position: 'absolute', width: '600px', height: '600px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%)', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', pointerEvents: 'none' },
+    card: { background: '#1E293B', border: '1px solid #334155', borderRadius: '16px', padding: '40px', width: '380px', position: 'relative', zIndex: 1, boxShadow: '0 25px 50px rgba(0,0,0,0.5)' },
+    logo: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '32px' },
+    logoIcon: { width: '44px', height: '44px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' },
     logoText: { color: 'white', fontSize: '22px', fontWeight: '700', letterSpacing: '-0.5px' },
     tagline: { color: '#475569', fontSize: '11px', fontWeight: '600', letterSpacing: '1.5px', textAlign: 'center', marginBottom: '28px', textTransform: 'uppercase' },
     heading: { color: 'white', fontSize: '20px', fontWeight: '700', textAlign: 'center', marginBottom: '4px', letterSpacing: '-0.3px' },
     sub: { color: '#64748B', fontSize: '13px', textAlign: 'center', marginBottom: '28px' },
     label: { display: 'block', color: '#94A3B8', fontSize: '12px', fontWeight: '600', marginBottom: '6px', letterSpacing: '0.3px' },
-    input: {
-      width: '100%', boxSizing: 'border-box',
-      padding: '10px 14px',
-      background: '#0F172A',
-      border: '1px solid #334155',
-      borderRadius: '8px',
-      color: 'white',
-      fontSize: '14px',
-      outline: 'none',
-      marginBottom: '16px',
-      transition: 'border-color 0.15s',
-    },
-    btn: {
-      width: '100%',
-      padding: '12px',
-      background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
-      border: 'none',
-      borderRadius: '8px',
-      color: 'white',
-      fontSize: '14px',
-      fontWeight: '600',
-      cursor: 'pointer',
-      marginTop: '8px',
-      letterSpacing: '0.2px',
-    },
-    divider: { color: '#334155', fontSize: '12px', textAlign: 'center', margin: '20px 0 0' },
-    demo: { color: '#475569', fontSize: '12px', textAlign: 'center', marginTop: '16px' },
+    input: { width: '100%', boxSizing: 'border-box', padding: '10px 14px', background: '#0F172A', border: '1px solid #334155', borderRadius: '8px', color: 'white', fontSize: '14px', outline: 'none', marginBottom: '16px', transition: 'border-color 0.15s' },
+    btn: { width: '100%', padding: '12px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', color: 'white', fontSize: '14px', fontWeight: '600', cursor: loggingIn ? 'not-allowed' : 'pointer', marginTop: '8px', letterSpacing: '0.2px', opacity: loggingIn ? 0.7 : 1 },
   };
 
   return (
@@ -105,34 +53,18 @@ export default function Login() {
         <div style={s.tagline}>Compliance CRM for Fintech</div>
         <div style={s.heading}>Welcome back</div>
         <div style={s.sub}>Sign in to your workspace</div>
-
         <form onSubmit={handleLogin}>
+          {error && (
+            <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '10px 14px', color: '#F87171', fontSize: '13px', marginBottom: '16px' }}>
+              {error}
+            </div>
+          )}
           <label style={s.label}>EMAIL ADDRESS</label>
-          <input
-            type="email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            style={s.input}
-            onFocus={e => e.target.style.borderColor = '#6366F1'}
-            onBlur={e => e.target.style.borderColor = '#334155'}
-          />
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={s.input} placeholder="you@company.com" required onFocus={e => e.target.style.borderColor = '#6366F1'} onBlur={e => e.target.style.borderColor = '#334155'} />
           <label style={s.label}>PASSWORD</label>
-          <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            style={s.input}
-            onFocus={e => e.target.style.borderColor = '#6366F1'}
-            onBlur={e => e.target.style.borderColor = '#334155'}
-          />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '4px' }}>
-            <a href="#" style={{ color: '#6366F1', fontSize: '12px', textDecoration: 'none' }}>Forgot password?</a>
-          </div>
-          <button type="submit" style={s.btn}>Sign in to Veridox</button>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} style={s.input} placeholder="••••••••" required onFocus={e => e.target.style.borderColor = '#6366F1'} onBlur={e => e.target.style.borderColor = '#334155'} />
+          <button type="submit" style={s.btn} disabled={loggingIn}>{loggingIn ? 'Signing in...' : 'Sign in to Veridox'}</button>
         </form>
-
-        <div style={s.demo}>Demo credentials pre-filled · Just click Sign in</div>
-
         <div style={{ marginTop: '32px', padding: '12px', background: '#0F172A', borderRadius: '8px', border: '1px solid #1E293B' }}>
           <div style={{ color: '#475569', fontSize: '11px', fontWeight: '600', letterSpacing: '0.5px', marginBottom: '6px' }}>SECURITY NOTICE</div>
           <div style={{ color: '#64748B', fontSize: '11px', lineHeight: '1.5' }}>This platform handles regulated client data. All sessions are logged and monitored.</div>
