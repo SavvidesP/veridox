@@ -1,11 +1,12 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/clients', icon: Users, label: 'Clients' },
   { to: '/pipeline', icon: Kanban, label: 'KYC Pipeline' },
+  { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions' },
   { to: '/add-client', icon: UserPlus, label: 'Add Client' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
