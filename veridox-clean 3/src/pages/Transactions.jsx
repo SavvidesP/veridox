@@ -86,6 +86,7 @@ export default function Transactions() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [selectedCols, setSelectedCols] = useState(ALL_EXPORT_COLUMNS.map(c => c.key));
   const [exportFilters, setExportFilters] = useState({ dateFrom: '', dateTo: '', brand: 'all', status: 'all', type: 'all', firstName: '', lastName: '' });
+  const [exporting, setExporting] = useState(false);
   const fileRef = useRef();
   const PAGE_SIZE = 50;
 
@@ -116,7 +117,6 @@ export default function Transactions() {
     const wb = XLSX.read(buf, { type: 'array', cellDates: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { raw: false, dateNF: 'yyyy-mm-dd' });
-
     const mapped = rows.map(r => ({
       created_date: r['created_date'] || null,
       confirmation_date: r['Confirmation Date'] || null,
@@ -145,7 +145,6 @@ export default function Transactions() {
       department_type: r['Department Type'] || null,
       country_group: r['country_group'] || null,
     }));
-
     for (let i = 0; i < mapped.length; i += 500) {
       await supabase.from('transactions').insert(mapped.slice(i, i + 500));
     }
@@ -155,6 +154,7 @@ export default function Transactions() {
   }
 
   async function exportExcel() {
+    setExporting(true);
     const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
     let q = supabase.from('transactions').select('*');
     if (exportFilters.brand !== 'all') q = q.eq('brand_name', exportFilters.brand);
@@ -165,7 +165,26 @@ export default function Transactions() {
     if (exportFilters.firstName) q = q.ilike('first_name', `%${exportFilters.firstName}%`);
     if (exportFilters.lastName) q = q.ilike('last_name', `%${exportFilters.lastName}%`);
     const { data } = await q;
-    if (!data?.length) { alert('No transactions match your filters.'); return; }
+    if (!data?.length) { alert('No transactions match your filters.'); setExporting(false); return; }
+
+    // Fetch exchange rates for unique date+currency combos (excluding USD)
+    const rateMap = {};
+    const uniquePairs = [...new Set(
+      data
+        .filter(t => t.account_currency && t.account_currency !== 'USD' && t.created_date)
+        .map(t => `${t.created_date.slice(0, 10)}_${t.account_currency}`)
+    )];
+    await Promise.all(uniquePairs.map(async pair => {
+      const [date, currency] = pair.split('_');
+      try {
+        const res = await fetch(`https://api.frankfurter.app/${date}?from=${currency}&to=USD`);
+        const json = await res.json();
+        rateMap[pair] = json.rates?.USD || null;
+      } catch {
+        rateMap[pair] = null;
+      }
+    }));
+
     const activeCols = ALL_EXPORT_COLUMNS.filter(c => selectedCols.includes(c.key));
     const rows = data.map(t => {
       const row = {};
@@ -175,12 +194,23 @@ export default function Transactions() {
         else if (col.key === 'amount' || col.key === 'usd_amount' || col.key === 'exchange_rate' || col.key === 'net_deposit') row[col.label] = v;
         else row[col.label] = v || '';
       });
+      if (t.account_currency === 'USD') {
+        row['Amount (USD)'] = t.amount;
+      } else if (t.account_currency && t.created_date) {
+        const key = `${t.created_date.slice(0, 10)}_${t.account_currency}`;
+        const rate = rateMap[key];
+        row['Amount (USD)'] = rate ? parseFloat((t.amount * rate).toFixed(2)) : 'N/A';
+      } else {
+        row['Amount (USD)'] = 'N/A';
+      }
       return row;
     });
+
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
     XLSX.writeFile(wb, `veridox-transactions-${new Date().toISOString().slice(0,10)}.xlsx`);
+    setExporting(false);
     setShowExportModal(false);
   }
 
@@ -188,7 +218,6 @@ export default function Transactions() {
     const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
     const { data } = await supabase.from('transactions').select('*').eq('brand_name', brand).order('created_date', { ascending: true });
     if (!data?.length) return;
-
     let balance = 0;
     const rows = data.map(t => {
       const amt = t.type?.toLowerCase() === 'withdrawal' ? -(t.amount || 0) : (t.amount || 0);
@@ -202,11 +231,9 @@ export default function Transactions() {
         'Balance': parseFloat(balance.toFixed(2)),
       };
     });
-
     const totalDeposits = data.filter(t => t.type?.toLowerCase() === 'deposit').reduce((s, t) => s + (t.amount || 0), 0);
     const totalWithdrawals = data.filter(t => t.type?.toLowerCase() === 'withdrawal').reduce((s, t) => s + (t.amount || 0), 0);
     const successful = data.filter(t => t.transaction_approval?.toLowerCase() === 'success').length;
-
     const summary = [
       { 'Field': 'Company', 'Value': brand },
       { 'Field': 'Statement Date', 'Value': new Date().toLocaleDateString() },
@@ -216,7 +243,6 @@ export default function Transactions() {
       { 'Field': 'Total Withdrawals', 'Value': parseFloat(totalWithdrawals.toFixed(2)) },
       { 'Field': 'Net Balance', 'Value': parseFloat((totalDeposits - totalWithdrawals).toFixed(2)) },
     ];
-
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), 'Summary');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Transactions');
@@ -329,7 +355,7 @@ export default function Transactions() {
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ color: '#0F172A', fontWeight: '700', fontSize: '15px' }}>Export Transactions</div>
-                <div style={{ color: '#64748B', fontSize: '12px', marginTop: '2px' }}>Filter & choose columns</div>
+                <div style={{ color: '#64748B', fontSize: '12px', marginTop: '2px' }}>Filter & choose columns — Amount (USD) auto-calculated</div>
               </div>
               <button onClick={() => setShowExportModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}><X size={18} /></button>
             </div>
@@ -404,9 +430,8 @@ export default function Transactions() {
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid #E2E8F0', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button onClick={() => setShowExportModal(false)} style={{ padding: '9px 20px', border: '1px solid #E2E8F0', borderRadius: '8px', background: 'white', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>Cancel</button>
-              <button onClick={exportExcel} disabled={selectedCols.length === 0} style={{ padding: '9px 20px', background: selectedCols.length === 0 ? '#E2E8F0' : 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: selectedCols.length === 0 ? '#94A3B8' : 'white', cursor: selectedCols.length === 0 ? 'not-allowed' : 'pointer' }}>
-                <Download size={13} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} />
-                Export {selectedCols.length} Columns
+              <button onClick={exportExcel} disabled={selectedCols.length === 0 || exporting} style={{ padding: '9px 20px', background: selectedCols.length === 0 || exporting ? '#E2E8F0' : 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: selectedCols.length === 0 || exporting ? '#94A3B8' : 'white', cursor: selectedCols.length === 0 || exporting ? 'not-allowed' : 'pointer', minWidth: '160px' }}>
+                {exporting ? 'Fetching rates...' : <><Download size={13} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} />Export {selectedCols.length} Columns</>}
               </button>
             </div>
           </div>
