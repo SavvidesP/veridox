@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert, ShieldX, BarChart2 } from 'lucide-react';
+import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert, ShieldX, BarChart2, GitBranch } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions' },
   { to: '/analytics', icon: BarChart2, label: 'Analytics' },
   { to: '/routing', icon: Zap, label: 'Smart Routing' },
+  { to: '/cascading', icon: GitBranch, label: 'Cascading' },
   { to: '/disputes', icon: ShieldAlert, label: 'Disputes' },
   { to: '/fraud-rules', icon: ShieldX, label: 'Anti-Fraud' },
   { to: '/add-client', icon: UserPlus, label: 'Add Client' },
