@@ -11,6 +11,7 @@ import Settings from './pages/Settings';
 import Transactions from './pages/Transactions';
 import Routing from './pages/Routing';
 import Disputes from './pages/Disputes';
+import FraudRules from './pages/FraudRules';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -37,6 +38,7 @@ function App() {
         <Route path="/transactions" element={<ProtectedRoute><Layout><Transactions /></Layout></ProtectedRoute>} />
         <Route path="/routing" element={<ProtectedRoute><Layout><Routing /></Layout></ProtectedRoute>} />
         <Route path="/disputes" element={<ProtectedRoute><Layout><Disputes /></Layout></ProtectedRoute>} />
+        <Route path="/fraud-rules" element={<ProtectedRoute><Layout><FraudRules /></Layout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </BrowserRouter>
