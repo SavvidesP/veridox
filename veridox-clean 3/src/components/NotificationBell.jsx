@@ -27,9 +27,7 @@ export default function NotificationBell() {
 
   useEffect(() => {
     fetchNotifications();
-    // Auto-generate notifications based on data
     generateNotifications();
-    // Close on outside click
     const handler = (e) => { if (panelRef.current && !panelRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -42,7 +40,6 @@ export default function NotificationBell() {
   }
 
   async function generateNotifications() {
-    // Check for conditions that should trigger notifications
     const [{ data: disputes }, { data: transactions }, { data: clients }] = await Promise.all([
       supabase.from('disputes').select('*').eq('status', 'open'),
       supabase.from('transactions').select('transaction_approval, amount'),
@@ -51,41 +48,22 @@ export default function NotificationBell() {
 
     const newNotifications = [];
 
-    // Overdue disputes
     const overdue = (disputes || []).filter(d => d.deadline && new Date(d.deadline) < new Date());
     if (overdue.length > 0) {
-      newNotifications.push({
-        title: 'Overdue Disputes',
-        message: `${overdue.length} dispute${overdue.length > 1 ? 's are' : ' is'} past deadline and needs immediate attention.`,
-        type: 'error',
-        link: '/disputes',
-      });
+      newNotifications.push({ title: 'Overdue Disputes', message: `${overdue.length} dispute${overdue.length > 1 ? 's are' : ' is'} past deadline and needs immediate attention.`, type: 'error', link: '/disputes' });
     }
 
-    // Low approval rate
     const total = (transactions || []).length;
     const success = (transactions || []).filter(t => t.transaction_approval?.toLowerCase() === 'success').length;
     const rate = total > 0 ? (success / total) * 100 : 0;
     if (rate < 50 && total > 0) {
-      newNotifications.push({
-        title: 'Low Approval Rate',
-        message: `Current approval rate is ${rate.toFixed(1)}%. Review your routing rules to improve performance.`,
-        type: 'warning',
-        link: '/routing',
-      });
+      newNotifications.push({ title: 'Low Approval Rate', message: `Current approval rate is ${rate.toFixed(1)}%. Review your routing rules to improve performance.`, type: 'warning', link: '/routing' });
     }
 
-    // Pending KYC clients
     if ((clients || []).length > 0) {
-      newNotifications.push({
-        title: 'Pending KYC Reviews',
-        message: `${clients.length} client${clients.length > 1 ? 's are' : ' is'} waiting for KYC approval.`,
-        type: 'info',
-        link: '/pipeline',
-      });
+      newNotifications.push({ title: 'Pending KYC Reviews', message: `${clients.length} client${clients.length > 1 ? 's are' : ' is'} waiting for KYC approval.`, type: 'info', link: '/pipeline' });
     }
 
-    // Insert new notifications (avoid duplicates by checking title)
     const { data: existing } = await supabase.from('notifications').select('title').order('created_at', { ascending: false }).limit(50);
     const existingTitles = new Set((existing || []).map(n => n.title));
 
@@ -123,9 +101,8 @@ export default function NotificationBell() {
 
   return (
     <div ref={panelRef} style={{ position: 'relative' }}>
-      {/* Bell Button */}
       <button onClick={() => setOpen(!open)}
-        style={{ position: 'relative', background: unread > 0 ? '#FEF2F2' : '#F8FAFC', border: `1px solid ${unread > 0 ? '#FECACA' : '#E2E8F0'}`, borderRadius: '10px', padding: '8px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        style={{ position: 'relative', background: unread > 0 ? '#FEF2F2' : '#1E293B', border: `1px solid ${unread > 0 ? '#FECACA' : '#334155'}`, borderRadius: '10px', padding: '8px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
         <Bell size={16} color={unread > 0 ? '#EF4444' : '#64748B'} />
         {unread > 0 && (
           <span style={{ background: '#EF4444', color: 'white', fontSize: '10px', fontWeight: '700', padding: '1px 6px', borderRadius: '10px', minWidth: '18px', textAlign: 'center' }}>
@@ -134,10 +111,8 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {/* Panel */}
       {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: '380px', background: 'white', borderRadius: '14px', border: '1px solid #E2E8F0', boxShadow: '0 20px 60px rgba(0,0,0,0.15)', zIndex: 1000, overflow: 'hidden' }}>
-          {/* Header */}
+        <div style={{ position: 'fixed', bottom: '70px', left: '252px', width: '380px', background: 'white', borderRadius: '14px', border: '1px solid #E2E8F0', boxShadow: '0 20px 60px rgba(0,0,0,0.15)', zIndex: 9999, overflow: 'hidden' }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <div style={{ fontWeight: '700', fontSize: '14px', color: '#0F172A' }}>Notifications</div>
@@ -150,13 +125,12 @@ export default function NotificationBell() {
             )}
           </div>
 
-          {/* List */}
           <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
             {loading ? (
               <div style={{ padding: '32px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>Loading...</div>
             ) : notifications.length === 0 ? (
               <div style={{ padding: '32px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>
-                <Bell size={24} style={{ marginBottom: '8px', opacity: 0.3 }} />
+                <div style={{ marginBottom: '8px', opacity: 0.3, fontSize: '24px' }}>🔔</div>
                 <div>No notifications yet</div>
               </div>
             ) : notifications.map(notif => {
@@ -164,7 +138,7 @@ export default function NotificationBell() {
               const Icon = config.icon;
               return (
                 <div key={notif.id} onClick={() => handleClick(notif)}
-                  style={{ display: 'flex', gap: '12px', padding: '14px 20px', borderBottom: '1px solid #F8FAFC', cursor: notif.link ? 'pointer' : 'default', background: notif.read ? 'white' : '#FAFBFF', transition: 'background 0.1s' }}
+                  style={{ display: 'flex', gap: '12px', padding: '14px 20px', borderBottom: '1px solid #F8FAFC', cursor: notif.link ? 'pointer' : 'default', background: notif.read ? 'white' : '#FAFBFF' }}
                   onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'}
                   onMouseLeave={e => e.currentTarget.style.background = notif.read ? 'white' : '#FAFBFF'}>
                   <div style={{ width: '32px', height: '32px', background: config.bg, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
