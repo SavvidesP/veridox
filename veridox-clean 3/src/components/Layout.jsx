@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert } from 'lucide-react';
+import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert, ShieldX } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions' },
   { to: '/routing', icon: Zap, label: 'Smart Routing' },
   { to: '/disputes', icon: ShieldAlert, label: 'Disputes' },
+  { to: '/fraud-rules', icon: ShieldX, label: 'Anti-Fraud' },
   { to: '/add-client', icon: UserPlus, label: 'Add Client' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
@@ -43,7 +44,7 @@ export default function Layout({ children }) {
           </div>
         </div>
 
-        <nav style={{ flex: 1, padding: '12px 10px' }}>
+        <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto' }}>
           <div style={{ color: '#475569', fontSize: '10px', fontWeight: '600', letterSpacing: '1px', padding: '8px 10px 4px', textTransform: 'uppercase' }}>Menu</div>
           {navItems.map(({ to, icon: Icon, label }) => (
             <NavLink key={to} to={to} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '8px', marginBottom: '2px', textDecoration: 'none', fontSize: '13.5px', fontWeight: isActive ? '600' : '400', color: isActive ? 'white' : '#94A3B8', background: isActive ? 'rgba(99,102,241,0.15)' : 'transparent', borderLeft: isActive ? '2px solid #6366F1' : '2px solid transparent', transition: 'all 0.15s ease' })}>
