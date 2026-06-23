@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
+const DEMO_EMAIL = 'demo@crmveridox.com';
+const DEMO_PASSWORD = 'Demo2024!';
+
 export default function Login() {
   const navigate = useNavigate();
   const { signIn } = useAuth();
@@ -23,6 +26,20 @@ export default function Login() {
     }
   };
 
+  const handleDemo = async () => {
+    setError('');
+    setLoggingIn(true);
+    setEmail(DEMO_EMAIL);
+    setPassword(DEMO_PASSWORD);
+    const { error: err } = await signIn(DEMO_EMAIL, DEMO_PASSWORD);
+    if (err) {
+      setError('Demo account unavailable. Please try again.');
+      setLoggingIn(false);
+    } else {
+      navigate('/dashboard');
+    }
+  };
+
   const s = {
     page: { minHeight: '100vh', background: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter', sans-serif", position: 'relative', overflow: 'hidden' },
     glow: { position: 'absolute', width: '600px', height: '600px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%)', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', pointerEvents: 'none' },
@@ -34,8 +51,8 @@ export default function Login() {
     heading: { color: 'white', fontSize: '20px', fontWeight: '700', textAlign: 'center', marginBottom: '4px', letterSpacing: '-0.3px' },
     sub: { color: '#64748B', fontSize: '13px', textAlign: 'center', marginBottom: '28px' },
     label: { display: 'block', color: '#94A3B8', fontSize: '12px', fontWeight: '600', marginBottom: '6px', letterSpacing: '0.3px' },
-    input: { width: '100%', boxSizing: 'border-box', padding: '10px 14px', background: '#0F172A', border: '1px solid #334155', borderRadius: '8px', color: 'white', fontSize: '14px', outline: 'none', marginBottom: '16px', transition: 'border-color 0.15s' },
-    btn: { width: '100%', padding: '12px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', color: 'white', fontSize: '14px', fontWeight: '600', cursor: loggingIn ? 'not-allowed' : 'pointer', marginTop: '8px', letterSpacing: '0.2px', opacity: loggingIn ? 0.7 : 1 },
+    input: { width: '100%', boxSizing: 'border-box', padding: '10px 14px', background: '#0F172A', border: '1px solid #334155', borderRadius: '8px', color: 'white', fontSize: '14px', outline: 'none', marginBottom: '16px', transition: 'border-color 0.15s', fontFamily: 'Inter, sans-serif' },
+    btn: { width: '100%', padding: '12px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', color: 'white', fontSize: '14px', fontWeight: '600', cursor: loggingIn ? 'not-allowed' : 'pointer', marginTop: '8px', letterSpacing: '0.2px', opacity: loggingIn ? 0.7 : 1, fontFamily: 'Inter, sans-serif' },
   };
 
   return (
@@ -53,6 +70,25 @@ export default function Login() {
         <div style={s.tagline}>Compliance CRM for Fintech</div>
         <div style={s.heading}>Welcome back</div>
         <div style={s.sub}>Sign in to your workspace</div>
+
+        {/* Demo Banner */}
+        <div style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '10px', padding: '14px', marginBottom: '20px', textAlign: 'center' }}>
+          <div style={{ color: '#A5B4FC', fontSize: '12px', fontWeight: '600', marginBottom: '8px' }}>🎯 Try Veridox instantly</div>
+          <button onClick={handleDemo} disabled={loggingIn}
+            style={{ width: '100%', padding: '9px', background: 'rgba(99,102,241,0.2)', border: '1px solid rgba(99,102,241,0.4)', borderRadius: '7px', color: '#A5B4FC', fontSize: '13px', fontWeight: '700', cursor: loggingIn ? 'not-allowed' : 'pointer', fontFamily: 'Inter, sans-serif', letterSpacing: '0.2px' }}>
+            {loggingIn ? 'Loading...' : '⚡ Launch Demo Account'}
+          </button>
+          <div style={{ color: '#475569', fontSize: '11px', marginTop: '8px' }}>
+            No signup needed · Read-only demo data
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+          <div style={{ flex: 1, height: '1px', background: '#1E293B' }} />
+          <span style={{ color: '#475569', fontSize: '11px', fontWeight: '600' }}>OR SIGN IN</span>
+          <div style={{ flex: 1, height: '1px', background: '#1E293B' }} />
+        </div>
+
         <form onSubmit={handleLogin}>
           {error && (
             <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '10px 14px', color: '#F87171', fontSize: '13px', marginBottom: '16px' }}>
@@ -65,7 +101,8 @@ export default function Login() {
           <input type="password" value={password} onChange={e => setPassword(e.target.value)} style={s.input} placeholder="••••••••" required onFocus={e => e.target.style.borderColor = '#6366F1'} onBlur={e => e.target.style.borderColor = '#334155'} />
           <button type="submit" style={s.btn} disabled={loggingIn}>{loggingIn ? 'Signing in...' : 'Sign in to Veridox'}</button>
         </form>
-        <div style={{ marginTop: '32px', padding: '12px', background: '#0F172A', borderRadius: '8px', border: '1px solid #1E293B' }}>
+
+        <div style={{ marginTop: '24px', padding: '12px', background: '#0F172A', borderRadius: '8px', border: '1px solid #1E293B' }}>
           <div style={{ color: '#475569', fontSize: '11px', fontWeight: '600', letterSpacing: '0.5px', marginBottom: '6px' }}>SECURITY NOTICE</div>
           <div style={{ color: '#64748B', fontSize: '11px', lineHeight: '1.5' }}>This platform handles regulated client data. All sessions are logged and monitored.</div>
         </div>
