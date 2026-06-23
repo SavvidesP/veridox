@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, Edit2, Check, X, Zap, Link, ArrowRight } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Link, GripVertical } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
-const statusBadge = (s) => ({
+const statusStyle = (s) => ({
   active: { background: '#DCFCE7', color: '#166534' },
   inactive: { background: '#FEE2E2', color: '#991B1B' },
 }[s] || { background: '#F1F5F9', color: '#64748B' });
@@ -18,7 +18,7 @@ export default function Routing() {
   const [editRule, setEditRule] = useState(null);
 
   const emptyPsp = { name: '', api_key: '', api_secret: '', endpoint_url: '', status: 'active' };
-  const emptyRule = { name: '', brand: '', currency: '', type: '', country: '', amount_min: '', amount_max: '', psp_id: '', fallback_psp_id: '', priority: 1, status: 'active' };
+  const emptyRule = { name: '', brand: '', currency: '', type: '', country: '', amount_min: '', amount_max: '', priority: 1, status: 'active', cascade_psps: [] };
 
   const [pspForm, setPspForm] = useState(emptyPsp);
   const [ruleForm, setRuleForm] = useState(emptyRule);
@@ -29,7 +29,7 @@ export default function Routing() {
     setLoading(true);
     const [{ data: p }, { data: r }] = await Promise.all([
       supabase.from('psp_connectors').select('*').order('created_at', { ascending: false }),
-      supabase.from('routing_rules').select('*, psp:psp_id(name), fallback:fallback_psp_id(name)').order('priority', { ascending: true }),
+      supabase.from('routing_rules').select('*').order('priority', { ascending: true }),
     ]);
     setPsps(p || []);
     setRules(r || []);
@@ -56,12 +56,19 @@ export default function Routing() {
 
   async function saveRule() {
     const payload = {
-      ...ruleForm,
+      name: ruleForm.name,
+      brand: ruleForm.brand || null,
+      currency: ruleForm.currency || null,
+      type: ruleForm.type || null,
+      country: ruleForm.country || null,
       amount_min: ruleForm.amount_min ? parseFloat(ruleForm.amount_min) : null,
       amount_max: ruleForm.amount_max ? parseFloat(ruleForm.amount_max) : null,
       priority: parseInt(ruleForm.priority) || 1,
-      psp_id: ruleForm.psp_id || null,
-      fallback_psp_id: ruleForm.fallback_psp_id || null,
+      status: ruleForm.status,
+      cascade_psps: ruleForm.cascade_psps || [],
+      // Keep old fields for backward compat
+      psp_id: ruleForm.cascade_psps?.[0]?.id || null,
+      fallback_psp_id: ruleForm.cascade_psps?.[1]?.id || null,
     };
     if (editRule) {
       await supabase.from('routing_rules').update(payload).eq('id', editRule.id);
@@ -85,8 +92,27 @@ export default function Routing() {
     fetchAll();
   }
 
+  function addCascadePsp() {
+    setRuleForm(f => ({ ...f, cascade_psps: [...(f.cascade_psps || []), { id: '', name: '' }] }));
+  }
+
+  function removeCascadePsp(idx) {
+    setRuleForm(f => ({ ...f, cascade_psps: f.cascade_psps.filter((_, i) => i !== idx) }));
+  }
+
+  function updateCascadePsp(idx, pspId) {
+    const psp = psps.find(p => p.id === pspId);
+    if (!psp) return;
+    setRuleForm(f => ({
+      ...f,
+      cascade_psps: f.cascade_psps.map((p, i) => i === idx ? { id: psp.id, name: psp.name } : p)
+    }));
+  }
+
   const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif' };
   const labelStyle = { display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' };
+
+  const cascadeColors = ['#6366F1', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#3B82F6'];
 
   return (
     <div style={{ padding: '32px', fontFamily: "'Inter', sans-serif" }}>
@@ -96,7 +122,7 @@ export default function Routing() {
           <h1 style={{ color: '#0F172A', fontSize: '22px', fontWeight: '700', margin: 0, letterSpacing: '-0.5px' }}>Smart Routing</h1>
           <p style={{ color: '#64748B', fontSize: '13px', margin: '4px 0 0' }}>Manage PSP connectors and routing rules</p>
         </div>
-        <button onClick={() => { activeTab === 'connectors' ? setShowPspModal(true) : setShowRuleModal(true); }}
+        <button onClick={() => activeTab === 'connectors' ? setShowPspModal(true) : setShowRuleModal(true)}
           style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: 'white', cursor: 'pointer' }}>
           <Plus size={14} /> {activeTab === 'connectors' ? 'Add PSP' : 'Add Rule'}
         </button>
@@ -131,7 +157,7 @@ export default function Routing() {
                       </div>
                       <div>
                         <div style={{ fontWeight: '700', fontSize: '14px', color: '#0F172A' }}>{psp.name}</div>
-                        <span style={{ ...statusBadge(psp.status), padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}>{psp.status}</span>
+                        <span style={{ ...statusStyle(psp.status), padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}>{psp.status}</span>
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '6px' }}>
@@ -165,50 +191,59 @@ export default function Routing() {
                 <div style={{ textAlign: 'center', padding: '48px', color: '#94A3B8', fontSize: '13px' }}>
                   No routing rules yet. Click <strong>Add Rule</strong> to get started.
                 </div>
-              ) : rules.map((rule, i) => (
-                <div key={rule.id} style={{ padding: '16px 20px', borderBottom: i < rules.length - 1 ? '1px solid #F1F5F9' : 'none', display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <div style={{ width: '28px', height: '28px', background: '#EEF2FF', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', color: '#6366F1', flexShrink: 0 }}>
-                    {rule.priority}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '4px' }}>{rule.name}</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      {rule.brand && <span style={{ background: '#F1F5F9', color: '#475569', padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '600' }}>Brand: {rule.brand}</span>}
-                      {rule.currency && <span style={{ background: '#F1F5F9', color: '#475569', padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '600' }}>Currency: {rule.currency}</span>}
-                      {rule.type && <span style={{ background: '#F1F5F9', color: '#475569', padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '600' }}>Type: {rule.type}</span>}
-                      {rule.country && <span style={{ background: '#F1F5F9', color: '#475569', padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '600' }}>Country: {rule.country}</span>}
-                      {rule.amount_min && <span style={{ background: '#F1F5F9', color: '#475569', padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '600' }}>Min: {rule.amount_min}</span>}
-                      {rule.amount_max && <span style={{ background: '#F1F5F9', color: '#475569', padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '600' }}>Max: {rule.amount_max}</span>}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '10px', color: '#94A3B8', fontWeight: '600', marginBottom: '2px' }}>PRIMARY</div>
-                      <span style={{ background: '#EEF2FF', color: '#4338CA', padding: '3px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '700' }}>{rule.psp?.name || '—'}</span>
-                    </div>
-                    {rule.fallback?.name && (
-                      <>
-                        <ArrowRight size={14} color="#94A3B8" />
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: '10px', color: '#94A3B8', fontWeight: '600', marginBottom: '2px' }}>FALLBACK</div>
-                          <span style={{ background: '#FFF7ED', color: '#C2410C', padding: '3px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '700' }}>{rule.fallback.name}</span>
+              ) : rules.map((rule, i) => {
+                const cascadePsps = rule.cascade_psps || [];
+                return (
+                  <div key={rule.id} style={{ padding: '16px 20px', borderBottom: i < rules.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                      <div style={{ width: '28px', height: '28px', background: '#EEF2FF', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', color: '#6366F1', flexShrink: 0, marginTop: '2px' }}>
+                        {rule.priority}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '6px' }}>{rule.name}</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+                          {rule.brand && <span style={{ background: '#F1F5F9', color: '#475569', padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '600' }}>Brand: {rule.brand}</span>}
+                          {rule.currency && <span style={{ background: '#F1F5F9', color: '#475569', padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '600' }}>Currency: {rule.currency}</span>}
+                          {rule.type && <span style={{ background: '#F1F5F9', color: '#475569', padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '600' }}>Type: {rule.type}</span>}
+                          {rule.country && <span style={{ background: '#F1F5F9', color: '#475569', padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '600' }}>Country: {rule.country}</span>}
                         </div>
-                      </>
-                    )}
+                        {/* Cascade chain */}
+                        {cascadePsps.length > 0 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            {cascadePsps.map((psp, idx) => (
+                              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                  <span style={{ fontSize: '9px', fontWeight: '700', color: '#94A3B8', marginBottom: '2px' }}>
+                                    {idx === 0 ? 'PRIMARY' : `FALLBACK ${idx}`}
+                                  </span>
+                                  <span style={{ background: `${cascadeColors[idx]}20`, color: cascadeColors[idx], padding: '3px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', border: `1px solid ${cascadeColors[idx]}40` }}>
+                                    {psp.name}
+                                  </span>
+                                </div>
+                                {idx < cascadePsps.length - 1 && (
+                                  <span style={{ fontSize: '10px', color: '#EF4444', fontWeight: '600' }}>→ FAILS →</span>
+                                )}
+                              </div>
+                            ))}
+                            <span style={{ fontSize: '10px', color: '#EF4444', fontWeight: '600' }}>→ DECLINED</span>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                        <span style={{ ...statusStyle(rule.status), padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}>{rule.status}</span>
+                        <button onClick={() => { setEditRule(rule); setRuleForm({ name: rule.name, brand: rule.brand || '', currency: rule.currency || '', type: rule.type || '', country: rule.country || '', amount_min: rule.amount_min || '', amount_max: rule.amount_max || '', priority: rule.priority, status: rule.status, cascade_psps: rule.cascade_psps || [] }); setShowRuleModal(true); }}
+                          style={{ padding: '5px', border: '1px solid #E2E8F0', borderRadius: '6px', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <Edit2 size={13} color="#64748B" />
+                        </button>
+                        <button onClick={() => deleteRule(rule.id)}
+                          style={{ padding: '5px', border: '1px solid #FEE2E2', borderRadius: '6px', background: '#FFF5F5', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <Trash2 size={13} color="#EF4444" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <span style={{ ...statusBadge(rule.status), padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600', flexShrink: 0 }}>{rule.status}</span>
-                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                    <button onClick={() => { setEditRule(rule); setRuleForm({ name: rule.name, brand: rule.brand || '', currency: rule.currency || '', type: rule.type || '', country: rule.country || '', amount_min: rule.amount_min || '', amount_max: rule.amount_max || '', psp_id: rule.psp_id || '', fallback_psp_id: rule.fallback_psp_id || '', priority: rule.priority, status: rule.status }); setShowRuleModal(true); }}
-                      style={{ padding: '5px', border: '1px solid #E2E8F0', borderRadius: '6px', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                      <Edit2 size={13} color="#64748B" />
-                    </button>
-                    <button onClick={() => deleteRule(rule.id)}
-                      style={{ padding: '5px', border: '1px solid #FEE2E2', borderRadius: '6px', background: '#FFF5F5', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                      <Trash2 size={13} color="#EF4444" />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </>
@@ -250,7 +285,7 @@ export default function Routing() {
       {/* Rule Modal */}
       {showRuleModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'white', borderRadius: '14px', width: '520px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+          <div style={{ background: 'white', borderRadius: '14px', width: '540px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A' }}>{editRule ? 'Edit Routing Rule' : 'Add Routing Rule'}</div>
               <button onClick={() => { setShowRuleModal(false); setEditRule(null); setRuleForm(emptyRule); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} color="#94A3B8" /></button>
@@ -279,25 +314,48 @@ export default function Routing() {
                   </div>
                 </div>
               </div>
-              <div style={{ background: '#F8FAFC', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Action (THEN)</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div>
-                    <label style={labelStyle}>Primary PSP</label>
-                    <select value={ruleForm.psp_id} onChange={e => setRuleForm(f => ({ ...f, psp_id: e.target.value }))} style={inputStyle}>
-                      <option value="">Select PSP</option>
-                      {psps.filter(p => p.status === 'active').map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Fallback PSP</label>
-                    <select value={ruleForm.fallback_psp_id} onChange={e => setRuleForm(f => ({ ...f, fallback_psp_id: e.target.value }))} style={inputStyle}>
-                      <option value="">None</option>
-                      {psps.filter(p => p.status === 'active').map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </div>
+
+              {/* Cascade PSP Chain */}
+              <div style={{ background: '#F8FAFC', borderRadius: '8px', padding: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>PSP Cascade Chain</div>
+                  <button onClick={addCascadePsp}
+                    style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', color: 'white', cursor: 'pointer' }}>
+                    <Plus size={11} /> Add PSP
+                  </button>
                 </div>
+                {ruleForm.cascade_psps?.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '12px', color: '#94A3B8', fontSize: '12px' }}>
+                    No PSPs added yet. Click "Add PSP" to build your cascade chain.
+                  </div>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {ruleForm.cascade_psps?.map((psp, idx) => (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '24px', height: '24px', background: `${cascadeColors[idx % cascadeColors.length]}20`, border: `1px solid ${cascadeColors[idx % cascadeColors.length]}40`, borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '700', color: cascadeColors[idx % cascadeColors.length], flexShrink: 0 }}>
+                        {idx + 1}
+                      </div>
+                      <span style={{ fontSize: '10px', fontWeight: '600', color: '#94A3B8', minWidth: '60px' }}>
+                        {idx === 0 ? 'PRIMARY' : `FALLBACK ${idx}`}
+                      </span>
+                      <select value={psp.id} onChange={e => updateCascadePsp(idx, e.target.value)} style={{ ...inputStyle, flex: 1 }}>
+                        <option value="">Select PSP</option>
+                        {psps.filter(p => p.status === 'active').map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                      <button onClick={() => removeCascadePsp(idx)}
+                        style={{ padding: '5px', border: '1px solid #FEE2E2', borderRadius: '6px', background: '#FFF5F5', cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                        <Trash2 size={13} color="#EF4444" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {ruleForm.cascade_psps?.length > 0 && (
+                  <div style={{ marginTop: '10px', padding: '8px', background: '#FEF2F2', borderRadius: '6px', fontSize: '11px', color: '#991B1B', fontWeight: '600', textAlign: 'center' }}>
+                    ❌ If all PSPs fail → DECLINED
+                  </div>
+                )}
               </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
                   <label style={labelStyle}>Priority</label>
