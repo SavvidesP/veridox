@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert, ShieldX, BarChart2, GitBranch } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import NotificationBell from './NotificationBell';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -63,9 +64,12 @@ export default function Layout({ children }) {
               <div style={{ color: 'white', fontSize: '13px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile?.full_name || user?.email?.split('@')[0] || 'User'}</div>
               <div style={{ color: '#475569', fontSize: '11px', textTransform: 'capitalize' }}>{profile?.role || 'analyst'}</div>
             </div>
-            <button onClick={handleSignOut} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: '4px' }} title="Sign out">
-              <LogOut size={15} />
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <NotificationBell />
+              <button onClick={handleSignOut} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: '4px' }} title="Sign out">
+                <LogOut size={15} />
+              </button>
+            </div>
           </div>
         </div>
       </aside>
