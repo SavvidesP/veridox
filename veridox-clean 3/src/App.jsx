@@ -20,6 +20,7 @@ import TradingAccounts from './pages/TradingAccounts';
 import BonusManagement from './pages/BonusManagement';
 import IBAffiliate from './pages/IBAffiliate';
 import FinancialReports from './pages/FinancialReports';
+import WithdrawalApprovals from './pages/WithdrawalApprovals';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -55,6 +56,7 @@ function App() {
         <Route path="/bonus-management" element={<ProtectedRoute><Layout><BonusManagement /></Layout></ProtectedRoute>} />
         <Route path="/ib-affiliate" element={<ProtectedRoute><Layout><IBAffiliate /></Layout></ProtectedRoute>} />
         <Route path="/financial-reports" element={<ProtectedRoute><Layout><FinancialReports /></Layout></ProtectedRoute>} />
+        <Route path="/withdrawal-approvals" element={<ProtectedRoute><Layout><WithdrawalApprovals /></Layout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </BrowserRouter>
