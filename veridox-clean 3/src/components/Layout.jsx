@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert, ShieldX, BarChart2, GitBranch, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert, ShieldX, BarChart2, GitBranch, Menu, X, Plug } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import NotificationBell from './NotificationBell';
 import { useState, useEffect } from 'react';
@@ -14,11 +14,11 @@ const navItems = [
   { to: '/cascading', icon: GitBranch, label: 'Cascading' },
   { to: '/disputes', icon: ShieldAlert, label: 'Disputes' },
   { to: '/fraud-rules', icon: ShieldX, label: 'Anti-Fraud' },
+  { to: '/integrations', icon: Plug, label: 'Integrations' },
   { to: '/add-client', icon: UserPlus, label: 'Add Client' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 
-// Bottom nav items (most important for mobile)
 const mobileNavItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Home' },
   { to: '/clients', icon: Users, label: 'Clients' },
@@ -48,11 +48,9 @@ export default function Layout({ children }) {
     ? profile.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
     : user?.email?.[0]?.toUpperCase() || 'U';
 
-  // Mobile Layout
   if (isMobile) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#F1F5F9', fontFamily: "'Inter', sans-serif" }}>
-        {/* Mobile Header */}
         <header style={{ background: '#0F172A', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1E293B', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ width: '28px', height: '28px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -71,7 +69,6 @@ export default function Layout({ children }) {
           </div>
         </header>
 
-        {/* Full Mobile Menu Overlay */}
         {mobileMenuOpen && (
           <div style={{ position: 'fixed', inset: 0, background: '#0F172A', zIndex: 9999, display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1E293B' }}>
@@ -112,12 +109,10 @@ export default function Layout({ children }) {
           </div>
         )}
 
-        {/* Main Content */}
         <main style={{ flex: 1, overflowY: 'auto', paddingBottom: '70px' }}>
           {children}
         </main>
 
-        {/* Bottom Navigation */}
         <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0F172A', borderTop: '1px solid #1E293B', display: 'flex', zIndex: 100 }}>
           {mobileNavItems.map(({ to, icon: Icon, label }) => (
             <NavLink key={to} to={to}
@@ -131,7 +126,6 @@ export default function Layout({ children }) {
     );
   }
 
-  // Desktop Layout
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#F1F5F9', fontFamily: "'Inter', sans-serif" }}>
       <aside style={{ width: '240px', minWidth: '240px', background: '#0F172A', display: 'flex', flexDirection: 'column', borderRight: '1px solid #1E293B' }}>
