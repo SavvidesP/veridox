@@ -121,7 +121,6 @@ function exportAllLogs(tx, logs) {
   const separator = '='.repeat(60);
   const divider = '-'.repeat(60);
   const line = (label, value) => `${label.padEnd(30)}: ${value || '-'}`;
-
   const content = [
     separator,
     `VERIDOX FULL TRANSACTION LOG`,
@@ -197,7 +196,6 @@ export default function TransactionDetail() {
     let reqPayload = null, resPayload = null;
     try { reqPayload = logForm.request_payload ? JSON.parse(logForm.request_payload) : null; } catch { reqPayload = { raw: logForm.request_payload }; }
     try { resPayload = logForm.response_payload ? JSON.parse(logForm.response_payload) : null; } catch { resPayload = { raw: logForm.response_payload }; }
-
     await supabase.from('transaction_logs').insert({
       transaction_id: tx.transaction_id,
       psp_name: logForm.psp_name,
@@ -207,7 +205,6 @@ export default function TransactionDetail() {
       request_payload: reqPayload,
       response_payload: resPayload,
     });
-
     const { data: txLogs } = await supabase.from('transaction_logs').select('*').eq('transaction_id', tx.transaction_id).order('attempt_number', { ascending: true });
     setLogs(txLogs || []);
     setLogForm({ psp_name: '', attempt_number: (parseInt(logForm.attempt_number) + 1), status: 'failed', reason: '', request_payload: '', response_payload: '' });
@@ -264,6 +261,7 @@ export default function TransactionDetail() {
         </div>
       </div>
 
+      {/* Row 1: Client + Payment */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
         <Section title="Client Information" icon={User} color="#6366F1" bg="#EEF2FF">
           <InfoRow label="Full Name" value={`${tx.first_name || ''} ${tx.last_name || ''}`.trim()} />
@@ -285,7 +283,10 @@ export default function TransactionDetail() {
           <InfoRow label="Net Deposit" value={formatAmount(tx.net_deposit, tx.account_currency)} />
           <InfoRow label="Confirmation Date" value={formatDate(tx.confirmation_date)} />
         </Section>
+      </div>
 
+      {/* Row 2: PSP + PSP Attempt Logs */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
         <Section title="PSP & Processing" icon={Building} color="#059669" bg="#ECFDF5">
           <InfoRow label="PSP" value={tx.psp_actual} />
           <InfoRow label="PSP Category" value={tx.psp_actual_category} />
@@ -312,7 +313,6 @@ export default function TransactionDetail() {
             </button>
           </div>
 
-          {/* Add Log Form */}
           {showAddLog && (
             <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '16px', marginBottom: '16px', border: '1px solid #E2E8F0' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
@@ -338,11 +338,11 @@ export default function TransactionDetail() {
                 </div>
                 <div>
                   <label style={labelStyle}>Request Payload (JSON)</label>
-                  <textarea value={logForm.request_payload} onChange={e => setLogForm(f => ({ ...f, request_payload: e.target.value }))} placeholder='{"amount": 100, "currency": "EUR"}' rows={2} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: '11px' }} />
+                  <textarea value={logForm.request_payload} onChange={e => setLogForm(f => ({ ...f, request_payload: e.target.value }))} placeholder='{"amount": 100}' rows={2} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: '11px' }} />
                 </div>
                 <div>
                   <label style={labelStyle}>Response Payload (JSON)</label>
-                  <textarea value={logForm.response_payload} onChange={e => setLogForm(f => ({ ...f, response_payload: e.target.value }))} placeholder='{"status": "declined", "code": "do_not_honor"}' rows={2} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: '11px' }} />
+                  <textarea value={logForm.response_payload} onChange={e => setLogForm(f => ({ ...f, response_payload: e.target.value }))} placeholder='{"status": "declined"}' rows={2} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: '11px' }} />
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -355,7 +355,6 @@ export default function TransactionDetail() {
             </div>
           )}
 
-          {/* Log Entries */}
           {logs.length === 0 ? (
             <div style={{ color: '#94A3B8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>
               No PSP attempts logged yet. Click <strong>Add Attempt</strong> to add one.
@@ -366,7 +365,7 @@ export default function TransactionDetail() {
                 <div key={log.id} style={{ display: 'flex', gap: '14px', paddingBottom: i < logs.length - 1 ? '16px' : '0', marginBottom: i < logs.length - 1 ? '16px' : '0', borderBottom: i < logs.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
                     <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: log.status === 'success' ? '#DCFCE7' : '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      {log.status === 'success' ? <CheckCircle size={14} color="#166634" /> : <XCircle size={14} color="#991B1B" />}
+                      {log.status === 'success' ? <CheckCircle size={14} color="#166534" /> : <XCircle size={14} color="#991B1B" />}
                     </div>
                     {i < logs.length - 1 && <div style={{ width: '2px', flex: 1, background: '#E2E8F0', minHeight: '20px' }} />}
                   </div>
