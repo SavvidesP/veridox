@@ -23,6 +23,7 @@ import FinancialReports from './pages/FinancialReports';
 import WithdrawalApprovals from './pages/WithdrawalApprovals';
 import DocumentCenter from './pages/DocumentCenter';
 import CommunicationCenter from './pages/CommunicationCenter';
+import SalesCRM from './pages/SalesCRM';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -61,6 +62,7 @@ function App() {
         <Route path="/withdrawal-approvals" element={<ProtectedRoute><Layout><WithdrawalApprovals /></Layout></ProtectedRoute>} />
         <Route path="/document-center" element={<ProtectedRoute><Layout><DocumentCenter /></Layout></ProtectedRoute>} />
         <Route path="/communication-center" element={<ProtectedRoute><Layout><CommunicationCenter /></Layout></ProtectedRoute>} />
+        <Route path="/sales-crm" element={<ProtectedRoute><Layout><SalesCRM /></Layout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </BrowserRouter>
