@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, X, CheckCircle, XCircle, Clock, AlertTriangle, FileText, Upload, Eye, Trash2, Edit2 } from 'lucide-react';
+import { Plus, X, CheckCircle, XCircle, Clock, AlertTriangle, FileText, Trash2, Edit2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const statusStyle = (s) => ({
@@ -69,24 +69,37 @@ export default function DocumentCenter() {
 
   async function save() {
     const payload = {
-      ...form,
       client_id: form.client_id || null,
+      document_type: form.document_type,
+      document_name: form.document_name,
+      file_url: form.file_url || null,
+      file_size: form.file_size || null,
+      status: form.status,
       expiry_date: form.expiry_date || null,
-      updated_at: new Date().toISOString(),
+      notes: form.notes || null,
     };
+
+    let error;
     if (editItem) {
-      await supabase.from('documents').update(payload).eq('id', editItem.id);
+      ({ error } = await supabase.from('documents').update(payload).eq('id', editItem.id));
     } else {
-      await supabase.from('documents').insert(payload);
+      ({ error } = await supabase.from('documents').insert(payload));
     }
+
+    if (error) {
+      console.error('Supabase error:', error);
+      alert('Error: ' + error.message);
+      return;
+    }
+
     setShowModal(false);
     setEditItem(null);
     setForm(empty);
     fetchAll();
   }
 
-  async function updateStatus(id, status, extra = {}) {
-    const update = { status, updated_at: new Date().toISOString(), ...extra };
+  async function updateStatus(id, status) {
+    const update = { status };
     if (status === 'verified') { update.verified_by = 'Admin'; update.verified_at = new Date().toISOString(); }
     await supabase.from('documents').update(update).eq('id', id);
     fetchAll();
@@ -116,7 +129,6 @@ export default function DocumentCenter() {
 
   return (
     <div style={{ padding: '32px', fontFamily: "'Inter', sans-serif" }}>
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div>
           <h1 style={{ color: '#0F172A', fontSize: '22px', fontWeight: '700', margin: 0, letterSpacing: '-0.5px' }}>Document Center</h1>
@@ -146,7 +158,6 @@ export default function DocumentCenter() {
         ))}
       </div>
 
-      {/* Expiry Alerts */}
       {expiringSoon > 0 && (
         <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: '10px', padding: '14px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <AlertTriangle size={16} color="#C2410C" />
@@ -301,7 +312,7 @@ export default function DocumentCenter() {
                 </div>
               </div>
               <div>
-                <label style={labelStyle}>Document Name</label>
+                <label style={labelStyle}>Document Name *</label>
                 <input value={form.document_name} onChange={e => setForm(f => ({ ...f, document_name: e.target.value }))} placeholder="e.g. John_Smith_Passport.pdf" style={inputStyle} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
