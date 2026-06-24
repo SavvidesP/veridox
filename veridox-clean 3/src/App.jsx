@@ -19,6 +19,7 @@ import Integrations from './pages/Integrations';
 import TradingAccounts from './pages/TradingAccounts';
 import BonusManagement from './pages/BonusManagement';
 import IBAffiliate from './pages/IBAffiliate';
+import FinancialReports from './pages/FinancialReports';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -53,6 +54,7 @@ function App() {
         <Route path="/trading-accounts" element={<ProtectedRoute><Layout><TradingAccounts /></Layout></ProtectedRoute>} />
         <Route path="/bonus-management" element={<ProtectedRoute><Layout><BonusManagement /></Layout></ProtectedRoute>} />
         <Route path="/ib-affiliate" element={<ProtectedRoute><Layout><IBAffiliate /></Layout></ProtectedRoute>} />
+        <Route path="/financial-reports" element={<ProtectedRoute><Layout><FinancialReports /></Layout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </BrowserRouter>
