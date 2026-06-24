@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Plus, X, Edit2, Trash2, User, Phone, Mail, TrendingUp, Target, Clock, CheckCircle } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { Plus, X, Edit2, Trash2, User, TrendingUp, Target, Clock, CheckCircle, Upload, Download, ChevronUp, ChevronDown } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const stageStyle = (s) => ({
@@ -32,6 +32,15 @@ function formatDate(v) {
 
 const stages = ['prospecting', 'qualified', 'proposal', 'negotiation', 'closed_won', 'closed_lost'];
 
+const SORT_FIELDS = [
+  { key: 'first_name', label: 'Name' },
+  { key: 'company', label: 'Company' },
+  { key: 'stage', label: 'Stage' },
+  { key: 'estimated_value', label: 'Value' },
+  { key: 'next_followup_at', label: 'Follow-up' },
+  { key: 'created_at', label: 'Date Added' },
+];
+
 export default function SalesCRM() {
   const [leads, setLeads] = useState([]);
   const [clients, setClients] = useState([]);
@@ -41,7 +50,10 @@ export default function SalesCRM() {
   const [filterStage, setFilterStage] = useState('all');
   const [filterSource, setFilterSource] = useState('all');
   const [search, setSearch] = useState('');
-  const [view, setView] = useState('table'); // table or kanban
+  const [view, setView] = useState('table');
+  const [sortKey, setSortKey] = useState('created_at');
+  const [sortDir, setSortDir] = useState('desc');
+  const fileRef = useRef();
 
   const empty = {
     first_name: '', last_name: '', email: '', phone: '', company: '',
@@ -110,15 +122,90 @@ export default function SalesCRM() {
     }
   }
 
-  const filtered = leads.filter(l => {
-    if (filterStage !== 'all' && l.stage !== filterStage) return false;
-    if (filterSource !== 'all' && l.source !== filterSource) return false;
-    if (search && !l.first_name?.toLowerCase().includes(search.toLowerCase()) &&
-      !l.last_name?.toLowerCase().includes(search.toLowerCase()) &&
-      !l.email?.toLowerCase().includes(search.toLowerCase()) &&
-      !l.company?.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  // ---- SORT ----
+  function handleSort(key) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  }
+
+  // ---- EXPORT ----
+  async function exportExcel() {
+    const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+    const rows = filtered.map(l => ({
+      'First Name': l.first_name,
+      'Last Name': l.last_name,
+      'Email': l.email || '',
+      'Phone': l.phone || '',
+      'Company': l.company || '',
+      'Country': l.country || '',
+      'Source': l.source || '',
+      'Stage': l.stage || '',
+      'Estimated Value': l.estimated_value || 0,
+      'Currency': l.currency || 'USD',
+      'Assigned To': l.assigned_to || '',
+      'Next Follow-up': l.next_followup_at ? formatDate(l.next_followup_at) : '',
+      'Notes': l.notes || '',
+      'Date Added': formatDate(l.created_at),
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sales Leads');
+    XLSX.writeFile(wb, `sales-leads-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
+  // ---- IMPORT ----
+  async function handleImport(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { raw: false });
+    const mapped = rows.map(r => ({
+      first_name: r['First Name'] || r['first_name'] || '',
+      last_name: r['Last Name'] || r['last_name'] || '',
+      email: r['Email'] || r['email'] || null,
+      phone: r['Phone'] || r['phone'] || null,
+      company: r['Company'] || r['company'] || null,
+      country: r['Country'] || r['country'] || null,
+      source: r['Source'] || r['source'] || 'manual',
+      stage: r['Stage'] || r['stage'] || 'prospecting',
+      estimated_value: parseFloat(r['Estimated Value'] || r['estimated_value']) || 0,
+      currency: r['Currency'] || r['currency'] || 'USD',
+      assigned_to: r['Assigned To'] || r['assigned_to'] || null,
+      notes: r['Notes'] || r['notes'] || null,
+      status: 'active',
+    })).filter(r => r.first_name);
+    if (mapped.length === 0) { alert('No valid rows found. Make sure columns match the template.'); return; }
+    for (let i = 0; i < mapped.length; i += 100) {
+      await supabase.from('sales_leads').insert(mapped.slice(i, i + 100));
+    }
+    alert(`✅ Imported ${mapped.length} leads!`);
+    fetchAll();
+    e.target.value = '';
+  }
+
+  // ---- FILTER + SORT ----
+  const filtered = leads
+    .filter(l => {
+      if (filterStage !== 'all' && l.stage !== filterStage) return false;
+      if (filterSource !== 'all' && l.source !== filterSource) return false;
+      if (search && !l.first_name?.toLowerCase().includes(search.toLowerCase()) &&
+        !l.last_name?.toLowerCase().includes(search.toLowerCase()) &&
+        !l.email?.toLowerCase().includes(search.toLowerCase()) &&
+        !l.company?.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      let aVal = a[sortKey] ?? '';
+      let bVal = b[sortKey] ?? '';
+      if (sortKey === 'estimated_value') { aVal = parseFloat(aVal) || 0; bVal = parseFloat(bVal) || 0; }
+      if (sortKey === 'next_followup_at' || sortKey === 'created_at') { aVal = aVal ? new Date(aVal) : new Date(0); bVal = bVal ? new Date(bVal) : new Date(0); }
+      if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
 
   const totalValue = leads.filter(l => l.stage === 'closed_won').reduce((s, l) => s + (parseFloat(l.estimated_value) || 0), 0);
   const pipelineValue = leads.filter(l => !['closed_won', 'closed_lost'].includes(l.stage)).reduce((s, l) => s + (parseFloat(l.estimated_value) || 0), 0);
@@ -128,6 +215,11 @@ export default function SalesCRM() {
   const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif' };
   const labelStyle = { display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' };
 
+  function SortIcon({ field }) {
+    if (sortKey !== field) return <ChevronUp size={12} color="#CBD5E1" />;
+    return sortDir === 'asc' ? <ChevronUp size={12} color="#6366F1" /> : <ChevronDown size={12} color="#6366F1" />;
+  }
+
   return (
     <div style={{ padding: '32px', fontFamily: "'Inter', sans-serif" }}>
       {/* Header */}
@@ -136,11 +228,20 @@ export default function SalesCRM() {
           <h1 style={{ color: '#0F172A', fontSize: '22px', fontWeight: '700', margin: 0, letterSpacing: '-0.5px' }}>Sales CRM</h1>
           <p style={{ color: '#64748B', fontSize: '13px', margin: '4px 0 0' }}>{leads.length} total leads</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '8px', padding: '3px' }}>
             <button onClick={() => setView('table')} style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: view === 'table' ? 'white' : 'transparent', fontSize: '13px', fontWeight: '600', color: view === 'table' ? '#0F172A' : '#64748B', cursor: 'pointer', boxShadow: view === 'table' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Table</button>
             <button onClick={() => setView('kanban')} style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: view === 'kanban' ? 'white' : 'transparent', fontSize: '13px', fontWeight: '600', color: view === 'kanban' ? '#0F172A' : '#64748B', cursor: 'pointer', boxShadow: view === 'kanban' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Kanban</button>
           </div>
+          <button onClick={() => fileRef.current.click()}
+            style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'white', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>
+            <Upload size={14} /> Import Excel
+          </button>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} />
+          <button onClick={exportExcel}
+            style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'white', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>
+            <Download size={14} /> Export Excel
+          </button>
           <button onClick={() => setShowModal(true)}
             style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: 'white', cursor: 'pointer' }}>
             <Plus size={14} /> Add Lead
@@ -166,8 +267,8 @@ export default function SalesCRM() {
         ))}
       </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      {/* Filters + Sort */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, email, company..."
           style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', outline: 'none', width: '220px', fontFamily: 'Inter, sans-serif' }} />
         <select value={filterStage} onChange={e => setFilterStage(e.target.value)}
@@ -180,6 +281,17 @@ export default function SalesCRM() {
           <option value="all">All Sources</option>
           {['manual', 'website', 'referral', 'social', 'email', 'cold_call'].map(s => <option key={s} value={s} style={{ textTransform: 'capitalize' }}>{s.replace('_', ' ')}</option>)}
         </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+          <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748B' }}>Sort by:</span>
+          <select value={sortKey} onChange={e => setSortKey(e.target.value)}
+            style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'Inter, sans-serif' }}>
+            {SORT_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+          </select>
+          <button onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+            style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', background: 'white', fontSize: '12px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>
+            {sortDir === 'asc' ? <><ChevronUp size={14} /> Asc</> : <><ChevronDown size={14} /> Desc</>}
+          </button>
+        </div>
       </div>
 
       {/* Table View */}
@@ -188,8 +300,23 @@ export default function SalesCRM() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
             <thead>
               <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
-                {['Lead', 'Company', 'Source', 'Stage', 'Value', 'Next Follow-up', 'Assigned', ''].map(h => (
-                  <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#94A3B8', letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                {[
+                  { label: 'Lead', key: 'first_name' },
+                  { label: 'Company', key: 'company' },
+                  { label: 'Source', key: 'source' },
+                  { label: 'Stage', key: 'stage' },
+                  { label: 'Value', key: 'estimated_value' },
+                  { label: 'Next Follow-up', key: 'next_followup_at' },
+                  { label: 'Assigned', key: 'assigned_to' },
+                  { label: '', key: null },
+                ].map(({ label, key }) => (
+                  <th key={label} onClick={key ? () => handleSort(key) : undefined}
+                    style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#94A3B8', letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: key ? 'pointer' : 'default', userSelect: 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      {label}
+                      {key && <SortIcon field={key} />}
+                    </div>
+                  </th>
                 ))}
               </tr>
             </thead>
