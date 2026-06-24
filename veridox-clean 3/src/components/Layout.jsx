@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert, ShieldX, BarChart2, GitBranch, Menu, X, Plug, LineChart, Gift, Network, FileText, ArrowDownCircle } from 'lucide-react';
+import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert, ShieldX, BarChart2, GitBranch, Menu, X, Plug, LineChart, Gift, Network, FileText, ArrowDownCircle, FolderOpen } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import NotificationBell from './NotificationBell';
 import { useState, useEffect } from 'react';
@@ -19,6 +19,7 @@ const navItems = [
   { to: '/ib-affiliate', icon: Network, label: 'IB / Affiliate' },
   { to: '/financial-reports', icon: FileText, label: 'Financial Reports' },
   { to: '/withdrawal-approvals', icon: ArrowDownCircle, label: 'Withdrawals' },
+  { to: '/document-center', icon: FolderOpen, label: 'Document Center' },
   { to: '/integrations', icon: Plug, label: 'Integrations' },
   { to: '/add-client', icon: UserPlus, label: 'Add Client' },
   { to: '/settings', icon: Settings, label: 'Settings' },
