@@ -15,6 +15,7 @@ import FraudRules from './pages/FraudRules';
 import Analytics from './pages/Analytics';
 import Cascading from './pages/Cascading';
 import TransactionDetail from './pages/TransactionDetail';
+import Integrations from './pages/Integrations';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -45,6 +46,7 @@ function App() {
         <Route path="/fraud-rules" element={<ProtectedRoute><Layout><FraudRules /></Layout></ProtectedRoute>} />
         <Route path="/analytics" element={<ProtectedRoute><Layout><Analytics /></Layout></ProtectedRoute>} />
         <Route path="/cascading" element={<ProtectedRoute><Layout><Cascading /></Layout></ProtectedRoute>} />
+        <Route path="/integrations" element={<ProtectedRoute><Layout><Integrations /></Layout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </BrowserRouter>
