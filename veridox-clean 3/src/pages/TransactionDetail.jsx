@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Copy, CheckCircle, XCircle, Clock, AlertTriangle, CreditCard, User, Building, ArrowLeftRight, Shield } from 'lucide-react';
+import { ArrowLeft, Copy, CheckCircle, XCircle, Clock, CreditCard, User, Building, ArrowLeftRight, Shield, Download } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const statusStyle = (s) => {
@@ -91,8 +91,6 @@ export default function TransactionDetail() {
       setLoading(true);
       const { data } = await supabase.from('transactions').select('*').eq('id', id).single();
       setTx(data);
-
-      // Fetch related transactions (same account_no)
       if (data?.account_no) {
         const { data: related } = await supabase
           .from('transactions')
@@ -108,6 +106,79 @@ export default function TransactionDetail() {
     fetchData();
   }, [id]);
 
+  function exportLog(tx, cascadeLog) {
+    const line = (label, value) => `${label.padEnd(30)}: ${value || '-'}`;
+    const separator = '='.repeat(60);
+    const divider = '-'.repeat(60);
+
+    const log = [
+      separator,
+      `VERIDOX TRANSACTION LOG`,
+      `Generated: ${new Date().toLocaleString('en-GB')}`,
+      separator,
+      '',
+      '[ TRANSACTION OVERVIEW ]',
+      divider,
+      line('Transaction ID', tx.transaction_id),
+      line('Status', tx.transaction_approval),
+      line('Type', tx.type),
+      line('Date', formatDate(tx.created_date)),
+      line('Confirmation Date', formatDate(tx.confirmation_date)),
+      '',
+      '[ CLIENT INFORMATION ]',
+      divider,
+      line('Full Name', `${tx.first_name || ''} ${tx.last_name || ''}`.trim()),
+      line('Account No.', tx.account_no),
+      line('Account (6+4)', mask6plus4(tx.account_no)),
+      line('Department', tx.department),
+      line('Department Type', tx.department_type),
+      line('Deposit Owner', tx.deposit_owner),
+      line('Country', tx.country_group),
+      '',
+      '[ PAYMENT DETAILS ]',
+      divider,
+      line('Brand', tx.brand_name),
+      line('Payment Method', tx.payment_method),
+      line('Currency', tx.account_currency),
+      line('Amount', formatAmount(tx.amount, tx.account_currency)),
+      line('USD Amount', formatAmount(tx.usd_amount, 'USD')),
+      line('Exchange Rate', tx.exchange_rate ? `1 ${tx.account_currency} = ${tx.exchange_rate} USD` : null),
+      line('Net Deposit', formatAmount(tx.net_deposit, tx.account_currency)),
+      '',
+      '[ PSP & PROCESSING ]',
+      divider,
+      line('PSP', tx.psp_actual),
+      line('PSP Category', tx.psp_actual_category),
+      line('PSP Transaction ID', tx.psp_transaction_id),
+      line('Payment Processor', tx.payment_processor),
+      line('Sub PSP', tx.sub_psp),
+      line('Sub PSP Transaction ID', tx.sub_psp_transaction_id),
+      line('Cleared By', tx.cleared_by_name),
+      '',
+      '[ CASCADING LOG ]',
+      divider,
+      ...cascadeLog.map((log, i) => [
+        `Step ${i + 1}: ${log.psp || 'Unknown PSP'}`,
+        `  Status  : ${log.status === 'success' ? 'APPROVED' : 'FAILED'}`,
+        `  Reason  : ${log.reason}`,
+        `  Time    : ${formatDate(log.time)}`,
+        i < cascadeLog.length - 1 ? '  → Routing to next PSP...' : '',
+      ].filter(Boolean).join('\n')),
+      '',
+      separator,
+      `END OF LOG — Veridox Compliance CRM`,
+      separator,
+    ].join('\n');
+
+    const blob = new Blob([log], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `txn-log-${tx.transaction_id}-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   if (loading) return <div style={{ padding: '32px', color: '#64748B', fontSize: '13px', fontFamily: 'Inter, sans-serif' }}>Loading...</div>;
   if (!tx) return <div style={{ padding: '32px', color: '#64748B', fontSize: '13px', fontFamily: 'Inter, sans-serif' }}>Transaction not found.</div>;
 
@@ -116,7 +187,6 @@ export default function TransactionDetail() {
   const StatusIcon = statusIcon;
   const sStyle = statusStyle(tx.transaction_approval);
 
-  // Simulate cascade log based on PSP data
   const cascadeLog = [
     tx.payment_processor && tx.payment_processor !== tx.psp_actual ? {
       psp: tx.payment_processor,
@@ -161,11 +231,15 @@ export default function TransactionDetail() {
               <span style={{ color: '#64748B', fontSize: '13px' }}>{formatDate(tx.created_date)}</span>
             </div>
           </div>
-          <div style={{ textAlign: 'right' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
             <div style={{ fontSize: '32px', fontWeight: '800', color: '#0F172A', letterSpacing: '-1px' }}>
               {formatAmount(tx.amount, tx.account_currency)}
             </div>
             {tx.usd_amount && <div style={{ fontSize: '13px', color: '#94A3B8' }}>≈ {formatAmount(tx.usd_amount, 'USD')}</div>}
+            <button onClick={() => exportLog(tx, cascadeLog)}
+              style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
+              <Download size={14} /> Export Log (.txt)
+            </button>
           </div>
         </div>
       </div>
@@ -216,9 +290,7 @@ export default function TransactionDetail() {
                 <div key={i} style={{ display: 'flex', gap: '14px', paddingBottom: i < cascadeLog.length - 1 ? '16px' : '0', marginBottom: i < cascadeLog.length - 1 ? '16px' : '0', borderBottom: i < cascadeLog.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
                     <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: log.status === 'success' ? '#DCFCE7' : '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      {log.status === 'success'
-                        ? <CheckCircle size={14} color="#166534" />
-                        : <XCircle size={14} color="#991B1B" />}
+                      {log.status === 'success' ? <CheckCircle size={14} color="#166534" /> : <XCircle size={14} color="#991B1B" />}
                     </div>
                     {i < cascadeLog.length - 1 && <div style={{ width: '2px', flex: 1, background: '#E2E8F0', minHeight: '20px' }} />}
                   </div>
