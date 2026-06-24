@@ -122,6 +122,8 @@ function exportLog(tx, cascadeLog) {
     line('Sub PSP', tx.sub_psp),
     line('Sub PSP Transaction ID', tx.sub_psp_transaction_id),
     line('Cleared By', tx.cleared_by_name),
+    line('Decline Reason', tx.decline_reason),
+    line('Decline Code', tx.decline_code),
     '',
     '[ CASCADING LOG ]',
     divider,
@@ -175,9 +177,9 @@ export default function TransactionDetail() {
   const StatusIcon = tx.transaction_approval?.toLowerCase() === 'success' ? CheckCircle : tx.transaction_approval?.toLowerCase() === 'failed' ? XCircle : Clock;
 
   const cascadeLog = [
-    tx.payment_processor && tx.payment_processor !== tx.psp_actual ? { psp: tx.payment_processor, status: 'failed', reason: 'Declined by processor', time: tx.created_date } : null,
+    tx.payment_processor && tx.payment_processor !== tx.psp_actual ? { psp: tx.payment_processor, status: 'failed', reason: tx.decline_reason || 'Declined by processor', time: tx.created_date } : null,
     tx.sub_psp && tx.sub_psp !== tx.psp_actual ? { psp: tx.sub_psp, status: 'failed', reason: 'Routing fallback', time: tx.created_date } : null,
-    { psp: tx.psp_actual, status: tx.transaction_approval?.toLowerCase() === 'success' ? 'success' : 'failed', reason: tx.transaction_approval?.toLowerCase() === 'success' ? 'Approved' : tx.transaction_approval || 'Declined', time: tx.confirmation_date || tx.created_date },
+    { psp: tx.psp_actual, status: tx.transaction_approval?.toLowerCase() === 'success' ? 'success' : 'failed', reason: tx.transaction_approval?.toLowerCase() === 'success' ? 'Approved' : tx.decline_reason || tx.transaction_approval || 'Declined', time: tx.confirmation_date || tx.created_date },
   ].filter(Boolean);
 
   return (
@@ -200,6 +202,11 @@ export default function TransactionDetail() {
               </span>
               {tx.type && <span style={{ ...typeStyle(tx.type), padding: '4px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: '600' }}>{tx.type}</span>}
               <span style={{ color: '#64748B', fontSize: '13px' }}>{formatDate(tx.created_date)}</span>
+              {tx.decline_reason && (
+                <span style={{ background: '#FEF2F2', color: '#991B1B', padding: '4px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  ⚠️ {tx.decline_reason} {tx.decline_code && `(${tx.decline_code})`}
+                </span>
+              )}
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
@@ -244,6 +251,13 @@ export default function TransactionDetail() {
           <InfoRow label="Sub PSP Txn ID" value={tx.sub_psp_transaction_id} mono copy />
           <InfoRow label="Cleared By" value={tx.cleared_by_name} />
           <InfoRow label="Status" value={tx.transaction_approval} badge badgeStyle={sStyle} />
+          {tx.decline_reason && (
+            <div style={{ marginTop: '12px', padding: '12px', background: '#FEF2F2', borderRadius: '8px', border: '1px solid #FECACA' }}>
+              <div style={{ fontSize: '11px', fontWeight: '700', color: '#991B1B', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Decline Reason</div>
+              <div style={{ fontSize: '13px', color: '#7F1D1D', fontWeight: '600' }}>{tx.decline_reason}</div>
+              {tx.decline_code && <div style={{ fontSize: '11px', color: '#991B1B', marginTop: '4px', fontFamily: 'monospace' }}>Code: {tx.decline_code}</div>}
+            </div>
+          )}
         </Section>
 
         <Section title="Cascading Log" icon={ArrowLeftRight} color="#F59E0B" bg="#FFFBEB">
