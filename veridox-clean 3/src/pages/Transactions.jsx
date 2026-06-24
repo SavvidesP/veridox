@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { Upload, Download, FileText, Search, X, CheckSquare, Square } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 const COLUMNS = [
@@ -74,6 +75,7 @@ function formatAmount(v) {
 }
 
 export default function Transactions() {
+  const navigate = useNavigate();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
@@ -166,8 +168,6 @@ export default function Transactions() {
     if (exportFilters.lastName) q = q.ilike('last_name', `%${exportFilters.lastName}%`);
     const { data } = await q;
     if (!data?.length) { alert('No transactions match your filters.'); setExporting(false); return; }
-
-    // Fetch historical rate for each unique date+currency combo
     const rateMap = {};
     const uniqueCombos = [...new Map(
       data
@@ -178,8 +178,6 @@ export default function Transactions() {
           return [key, { date, currency: t.account_currency, key }];
         })
     ).values()];
-
-    // Fetch in batches of 5 to avoid overwhelming the API
     for (let i = 0; i < uniqueCombos.length; i += 5) {
       const batch = uniqueCombos.slice(i, i + 5);
       await Promise.all(batch.map(async ({ date, currency, key }) => {
@@ -188,19 +186,16 @@ export default function Transactions() {
           if (!res.ok) { rateMap[key] = null; return; }
           const json = await res.json();
           rateMap[key] = json.rates?.USD ?? null;
-        } catch {
-          rateMap[key] = null;
-        }
+        } catch { rateMap[key] = null; }
       }));
     }
-
     const activeCols = ALL_EXPORT_COLUMNS.filter(c => selectedCols.includes(c.key));
     const rows = data.map(t => {
       const row = {};
       activeCols.forEach(col => {
         const v = t[col.key];
         if (col.key === 'created_date' || col.key === 'confirmation_date') row[col.label] = formatDate(v);
-        else if (col.key === 'amount' || col.key === 'usd_amount' || col.key === 'exchange_rate' || col.key === 'net_deposit') row[col.label] = v;
+        else if (['amount', 'usd_amount', 'exchange_rate', 'net_deposit'].includes(col.key)) row[col.label] = v;
         else row[col.label] = v || '';
       });
       const amt = parseFloat(t.amount) || 0;
@@ -215,7 +210,6 @@ export default function Transactions() {
       }
       return row;
     });
-
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
@@ -334,7 +328,7 @@ export default function Transactions() {
                 No transactions yet. Click <strong>Import Excel</strong> to upload your data.
               </td></tr>
             ) : transactions.map(t => (
-              <tr key={t.id} style={{ borderTop: '1px solid #F1F5F9', background: 'white' }} onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'} onMouseLeave={e => e.currentTarget.style.background = 'white'}>
+              <tr key={t.id} onClick={() => navigate(`/transactions/${t.id}`)} style={{ borderTop: '1px solid #F1F5F9', background: 'white', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'} onMouseLeave={e => e.currentTarget.style.background = 'white'}>
                 <td style={{ padding: '11px 16px', color: '#64748B', fontSize: '12px', whiteSpace: 'nowrap' }}>{formatDate(t.created_date)}</td>
                 <td style={{ padding: '11px 16px', color: '#0F172A', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>{t.transaction_id || '-'}</td>
                 <td style={{ padding: '11px 16px', color: '#475569', fontSize: '12px', whiteSpace: 'nowrap' }}>{t.brand_name || '-'}</td>
@@ -428,7 +422,7 @@ export default function Transactions() {
                   {ALL_EXPORT_COLUMNS.map(col => {
                     const checked = selectedCols.includes(col.key);
                     return (
-                      <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 8px', borderRadius: '6px', cursor: 'pointer', background: checked ? '#EEF2FF' : 'transparent', transition: 'background 0.1s' }}>
+                      <label key={col.key} onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 8px', borderRadius: '6px', cursor: 'pointer', background: checked ? '#EEF2FF' : 'transparent', transition: 'background 0.1s' }}>
                         <input type="checkbox" checked={checked} onChange={() => setSelectedCols(prev => checked ? prev.filter(k => k !== col.key) : [...prev, col.key])} style={{ display: 'none' }} />
                         {checked ? <CheckSquare size={15} color="#6366F1" /> : <Square size={15} color="#CBD5E1" />}
                         <span style={{ fontSize: '12px', color: checked ? '#4338CA' : '#475569', fontWeight: checked ? '600' : '400' }}>{col.label}</span>
