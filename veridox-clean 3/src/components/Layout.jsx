@@ -1,5 +1,5 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert, ShieldX, BarChart2, GitBranch, Menu, X, Plug, LineChart, Gift, Network, FileText, ArrowDownCircle, FolderOpen, MessageCircle, Briefcase, ChevronDown, ChevronRight, CreditCard, Building2 } from 'lucide-react';
+import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert, ShieldX, BarChart2, GitBranch, Menu, X, Plug, LineChart, Gift, Network, FileText, ArrowDownCircle, FolderOpen, MessageCircle, Briefcase, ChevronDown, ChevronRight, CreditCard, Building2, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import NotificationBell from './NotificationBell';
 import { useState, useEffect } from 'react';
@@ -39,6 +39,7 @@ const navGroups = [
       { to: '/document-center', icon: FolderOpen, label: 'Document Center' },
       { to: '/communication-center', icon: MessageCircle, label: 'Communications' },
       { to: '/sales-crm', icon: Briefcase, label: 'Sales CRM' },
+      { to: '/converted-clients', icon: UserCheck, label: 'Converted Clients' },
     ],
   },
   {
