@@ -49,30 +49,65 @@ const ALL_EXPORT_COLUMNS = [
   { key: 'country_group', label: 'Country' },
 ];
 
-const statusStyle = (s) => {
-  if (!s) return {};
+// ── Badge helpers — same visual language as Dashboard kycBadge ──
+const statusBadge = (s) => {
+  if (!s) return null;
   const v = s.toLowerCase();
-  if (v === 'success' || v === 'approved') return { background: '#DCFCE7', color: '#166534' };
-  if (v === 'failed' || v === 'rejected') return { background: '#FEE2E2', color: '#991B1B' };
-  return { background: '#FEF9C3', color: '#854D0E' };
+  let style;
+  if (v === 'success' || v === 'approved') {
+    style = { color: '#16A34A', border: '1px solid #BBF7D0' };
+  } else if (v === 'failed' || v === 'rejected') {
+    style = { color: '#DC2626', border: '1px solid #FECACA' };
+  } else {
+    style = { color: '#9CA3AF', border: '1px solid #E5E7EB' };
+  }
+  return (
+    <span style={{
+      ...style,
+      background: 'transparent',
+      padding: '2px 10px',
+      borderRadius: '4px',
+      fontSize: '11px',
+      fontWeight: '600',
+      letterSpacing: '0.3px',
+    }}>
+      {s}
+    </span>
+  );
 };
 
-const typeStyle = (t) => {
-  if (!t) return {};
-  return t.toLowerCase() === 'deposit'
-    ? { background: '#EEF2FF', color: '#4338CA' }
-    : { background: '#FFF7ED', color: '#C2410C' };
+const typeBadge = (t) => {
+  if (!t) return null;
+  const isDeposit = t.toLowerCase() === 'deposit';
+  return (
+    <span style={{
+      background: 'transparent',
+      color: isDeposit ? '#111827' : '#6B7280',
+      border: `1px solid ${isDeposit ? '#D1D5DB' : '#E5E7EB'}`,
+      padding: '2px 10px',
+      borderRadius: '4px',
+      fontSize: '11px',
+      fontWeight: '600',
+      letterSpacing: '0.3px',
+    }}>
+      {t}
+    </span>
+  );
 };
 
 function formatDate(v) {
-  if (!v) return '-';
+  if (!v) return '—';
   return new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function formatAmount(v) {
-  if (v == null) return '-';
+  if (v == null) return '—';
   return Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
+const sectionLabel = (text) => (
+  <div style={{ fontSize: '11px', fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>{text}</div>
+);
 
 export default function Transactions() {
   const navigate = useNavigate();
@@ -213,7 +248,7 @@ export default function Transactions() {
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
-    XLSX.writeFile(wb, `veridox-transactions-${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(wb, `veridox-transactions-${new Date().toISOString().slice(0, 10)}.xlsx`);
     setExporting(false);
     setShowExportModal(false);
   }
@@ -235,156 +270,260 @@ export default function Transactions() {
         'Balance': parseFloat(balance.toFixed(2)),
       };
     });
-    const totalDeposits = data.filter(t => t.type?.toLowerCase() === 'deposit').reduce((s, t) => s + (t.amount || 0), 0);
+    const totalDeposits    = data.filter(t => t.type?.toLowerCase() === 'deposit').reduce((s, t) => s + (t.amount || 0), 0);
     const totalWithdrawals = data.filter(t => t.type?.toLowerCase() === 'withdrawal').reduce((s, t) => s + (t.amount || 0), 0);
-    const successful = data.filter(t => t.transaction_approval?.toLowerCase() === 'success').length;
+    const successful       = data.filter(t => t.transaction_approval?.toLowerCase() === 'success').length;
     const summary = [
-      { 'Field': 'Company', 'Value': brand },
-      { 'Field': 'Statement Date', 'Value': new Date().toLocaleDateString() },
+      { 'Field': 'Company',            'Value': brand },
+      { 'Field': 'Statement Date',     'Value': new Date().toLocaleDateString() },
       { 'Field': 'Total Transactions', 'Value': data.length },
-      { 'Field': 'Successful', 'Value': successful },
-      { 'Field': 'Total Deposits', 'Value': parseFloat(totalDeposits.toFixed(2)) },
-      { 'Field': 'Total Withdrawals', 'Value': parseFloat(totalWithdrawals.toFixed(2)) },
-      { 'Field': 'Net Balance', 'Value': parseFloat((totalDeposits - totalWithdrawals).toFixed(2)) },
+      { 'Field': 'Successful',         'Value': successful },
+      { 'Field': 'Total Deposits',     'Value': parseFloat(totalDeposits.toFixed(2)) },
+      { 'Field': 'Total Withdrawals',  'Value': parseFloat(totalWithdrawals.toFixed(2)) },
+      { 'Field': 'Net Balance',        'Value': parseFloat((totalDeposits - totalWithdrawals).toFixed(2)) },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), 'Summary');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Transactions');
-    XLSX.writeFile(wb, `${brand}-statement-${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(wb, `${brand}-statement-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
+  // ── shared input style (matches Dashboard selects/inputs) ──
+  const inputStyle = {
+    padding: '7px 10px',
+    border: '1px solid #E5E7EB',
+    borderRadius: '5px',
+    fontSize: '13px',
+    color: '#111827',
+    background: '#fff',
+    outline: 'none',
+    fontFamily: 'Inter, sans-serif',
+  };
+
   return (
-    <div style={{ padding: '32px', fontFamily: "'Inter', sans-serif" }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+    <div style={{ padding: '40px 44px', fontFamily: "'Inter', sans-serif", background: '#fff', minHeight: '100vh', maxWidth: '1280px' }}>
+
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '36px' }}>
         <div>
-          <h1 style={{ color: '#0F172A', fontSize: '22px', fontWeight: '700', margin: 0, letterSpacing: '-0.5px' }}>Transactions</h1>
-          <p style={{ color: '#64748B', fontSize: '13px', margin: '4px 0 0' }}>{total.toLocaleString()} total transactions</p>
+          <h1 style={{ color: '#111827', fontSize: '26px', fontWeight: '700', margin: 0, letterSpacing: '-0.5px' }}>Transactions</h1>
+          <p style={{ color: '#9CA3AF', fontSize: '13px', margin: '5px 0 0', fontWeight: '400' }}>{total.toLocaleString()} total records</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => fileRef.current.click()} disabled={importing} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'white', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>
-            <Upload size={14} /> {importing ? 'Importing...' : 'Import Excel'}
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => fileRef.current.click()}
+            disabled={importing}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 18px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '5px', fontSize: '13px', fontWeight: '500', color: '#374151', cursor: importing ? 'not-allowed' : 'pointer' }}
+            onMouseEnter={e => { if (!importing) e.currentTarget.style.borderColor = '#9CA3AF'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = '#E5E7EB'; }}
+          >
+            <Upload size={13} /> {importing ? 'Importing…' : 'Import Excel'}
           </button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} />
-          <button onClick={() => setShowExportModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: 'white', cursor: 'pointer' }}>
-            <Download size={14} /> Export Excel
+          <button
+            onClick={() => setShowExportModal(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 18px', background: '#111827', border: '1px solid #111827', borderRadius: '5px', fontSize: '13px', fontWeight: '600', color: '#fff', cursor: 'pointer', letterSpacing: '0.1px' }}
+          >
+            <Download size={13} /> Export Excel
           </button>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      {/* ── Filters ── */}
+      {sectionLabel('Filters')}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap', alignItems: 'center' }}>
+        {/* Search */}
         <div style={{ position: 'relative' }}>
-          <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
-          <input value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} onKeyDown={e => e.key === 'Enter' && fetchTransactions()} placeholder="Search ID, name, account..." style={{ paddingLeft: '32px', paddingRight: '12px', paddingTop: '8px', paddingBottom: '8px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', outline: 'none', width: '220px', fontFamily: 'Inter, sans-serif' }} />
+          <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#9CA3AF' }} />
+          <input
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(0); }}
+            onKeyDown={e => e.key === 'Enter' && fetchTransactions()}
+            placeholder="Search ID, name, account…"
+            style={{ ...inputStyle, paddingLeft: '32px', width: '220px' }}
+          />
         </div>
-        <select value={filterBrand} onChange={e => { setFilterBrand(e.target.value); setPage(0); }} style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', color: '#0F172A', background: 'white', outline: 'none', fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}>
+
+        <select value={filterBrand} onChange={e => { setFilterBrand(e.target.value); setPage(0); }} style={inputStyle}>
           <option value="all">All Brands</option>
           {brands.map(b => <option key={b} value={b}>{b}</option>)}
         </select>
-        <select value={filterType} onChange={e => { setFilterType(e.target.value); setPage(0); }} style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', color: '#0F172A', background: 'white', outline: 'none', fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}>
+
+        <select value={filterType} onChange={e => { setFilterType(e.target.value); setPage(0); }} style={inputStyle}>
           <option value="all">All Types</option>
           <option value="Deposit">Deposit</option>
           <option value="Withdrawal">Withdrawal</option>
         </select>
-        <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(0); }} style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', color: '#0F172A', background: 'white', outline: 'none', fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}>
+
+        <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(0); }} style={inputStyle}>
           <option value="all">All Statuses</option>
           <option value="Success">Success</option>
           <option value="Failed">Failed</option>
           <option value="Pending">Pending</option>
         </select>
+
         {filterBrand !== 'all' && (
-          <button onClick={() => downloadStatement(filterBrand)} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 14px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#166534', cursor: 'pointer' }}>
-            <FileText size={14} /> Download Statement for {filterBrand}
+          <button
+            onClick={() => downloadStatement(filterBrand)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '5px', fontSize: '13px', fontWeight: '500', color: '#374151', cursor: 'pointer' }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = '#9CA3AF'}
+            onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}
+          >
+            <FileText size={13} /> Statement — {filterBrand}
           </button>
         )}
       </div>
 
+      {/* ── Brand statements row (when no brand filter active) ── */}
       {brands.length > 0 && filterBrand === 'all' && (
-        <div style={{ marginBottom: '16px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <span style={{ color: '#64748B', fontSize: '12px', fontWeight: '600', alignSelf: 'center' }}>Statements:</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
+          <span style={{ color: '#9CA3AF', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.7px' }}>Statements</span>
           {brands.map(b => (
-            <button key={b} onClick={() => downloadStatement(b)} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', background: 'white', border: '1px solid #E2E8F0', borderRadius: '6px', fontSize: '12px', fontWeight: '600', color: '#475569', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
+            <button
+              key={b}
+              onClick={() => downloadStatement(b)}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '5px', fontSize: '12px', fontWeight: '500', color: '#374151', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = '#9CA3AF'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}
+            >
               <FileText size={12} /> {b}
             </button>
           ))}
         </div>
       )}
 
-      <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'auto' }}>
+      {/* ── Table ── */}
+      <div style={{ border: '1px solid #E5E7EB', borderRadius: '6px', overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1100px' }}>
           <thead>
-            <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+            <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
               {COLUMNS.map(c => (
-                <th key={c.key} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#94A3B8', letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{c.label}</th>
+                <th key={c.key} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#9CA3AF', letterSpacing: '0.6px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                  {c.label}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={COLUMNS.length} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>Loading...</td></tr>
+              <tr>
+                <td colSpan={COLUMNS.length} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>
+                  Loading…
+                </td>
+              </tr>
             ) : transactions.length === 0 ? (
-              <tr><td colSpan={COLUMNS.length} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>
-                No transactions yet. Click <strong>Import Excel</strong> to upload your data.
-              </td></tr>
-            ) : transactions.map(t => (
-              <tr key={t.id} onClick={() => navigate(`/transactions/${t.id}`)} style={{ borderTop: '1px solid #F1F5F9', background: 'white', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'} onMouseLeave={e => e.currentTarget.style.background = 'white'}>
-                <td style={{ padding: '11px 16px', color: '#64748B', fontSize: '12px', whiteSpace: 'nowrap' }}>{formatDate(t.created_date)}</td>
-                <td style={{ padding: '11px 16px', color: '#0F172A', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>{t.transaction_id || '-'}</td>
-                <td style={{ padding: '11px 16px', color: '#475569', fontSize: '12px', whiteSpace: 'nowrap' }}>{t.brand_name || '-'}</td>
-                <td style={{ padding: '11px 16px', color: '#475569', fontSize: '12px' }}>{t.first_name || '-'}</td>
-                <td style={{ padding: '11px 16px', color: '#475569', fontSize: '12px' }}>{t.last_name || '-'}</td>
-                <td style={{ padding: '11px 16px', color: '#475569', fontSize: '12px', fontFamily: 'monospace' }}>{t.account_no || '-'}</td>
-                <td style={{ padding: '11px 16px' }}>
-                  {t.type && <span style={{ ...typeStyle(t.type), padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}>{t.type}</span>}
+              <tr>
+                <td colSpan={COLUMNS.length} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>
+                  No transactions yet.{' '}
+                  <span
+                    style={{ color: '#111827', fontWeight: '500', cursor: 'pointer', textDecoration: 'underline' }}
+                    onClick={() => fileRef.current.click()}
+                  >
+                    Import your first file
+                  </span>
                 </td>
-                <td style={{ padding: '11px 16px', color: '#475569', fontSize: '12px' }}>{t.account_currency || '-'}</td>
-                <td style={{ padding: '11px 16px', color: '#0F172A', fontSize: '12px', fontWeight: '600', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatAmount(t.amount)}</td>
-                <td style={{ padding: '11px 16px', color: '#64748B', fontSize: '12px', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatAmount(t.usd_amount)}</td>
-                <td style={{ padding: '11px 16px', color: '#475569', fontSize: '12px', whiteSpace: 'nowrap' }}>{t.payment_method || '-'}</td>
-                <td style={{ padding: '11px 16px', color: '#475569', fontSize: '12px', whiteSpace: 'nowrap' }}>{t.psp_actual || '-'}</td>
-                <td style={{ padding: '11px 16px' }}>
-                  {t.transaction_approval && <span style={{ ...statusStyle(t.transaction_approval), padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}>{t.transaction_approval}</span>}
-                </td>
-                <td style={{ padding: '11px 16px', color: '#475569', fontSize: '12px', whiteSpace: 'nowrap' }}>{t.country_group || '-'}</td>
+              </tr>
+            ) : transactions.map((t, idx) => (
+              <tr
+                key={t.id}
+                onClick={() => navigate(`/transactions/${t.id}`)}
+                style={{ borderBottom: idx < transactions.length - 1 ? '1px solid #F3F4F6' : 'none', cursor: 'pointer', background: '#fff' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
+                onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+              >
+                <td style={{ padding: '14px 16px', color: '#9CA3AF', fontSize: '12px', whiteSpace: 'nowrap' }}>{formatDate(t.created_date)}</td>
+                <td style={{ padding: '14px 16px', color: '#111827', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{t.transaction_id || '—'}</td>
+                <td style={{ padding: '14px 16px', color: '#374151', fontSize: '13px', whiteSpace: 'nowrap' }}>{t.brand_name || '—'}</td>
+                <td style={{ padding: '14px 16px', color: '#374151', fontSize: '13px' }}>{t.first_name || '—'}</td>
+                <td style={{ padding: '14px 16px', color: '#374151', fontSize: '13px' }}>{t.last_name || '—'}</td>
+                <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '12px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{t.account_no || '—'}</td>
+                <td style={{ padding: '14px 16px' }}>{typeBadge(t.type)}</td>
+                <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '12px' }}>{t.account_currency || '—'}</td>
+                <td style={{ padding: '14px 16px', color: '#111827', fontSize: '13px', fontWeight: '600', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatAmount(t.amount)}</td>
+                <td style={{ padding: '14px 16px', color: '#9CA3AF', fontSize: '12px', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatAmount(t.usd_amount)}</td>
+                <td style={{ padding: '14px 16px', color: '#374151', fontSize: '12px', whiteSpace: 'nowrap' }}>{t.payment_method || '—'}</td>
+                <td style={{ padding: '14px 16px', color: '#374151', fontSize: '12px', whiteSpace: 'nowrap' }}>{t.psp_actual || '—'}</td>
+                <td style={{ padding: '14px 16px' }}>{statusBadge(t.transaction_approval)}</td>
+                <td style={{ padding: '14px 16px', color: '#374151', fontSize: '12px', whiteSpace: 'nowrap' }}>{t.country_group || '—'}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
+      {/* ── Pagination ── */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '16px' }}>
+          <span style={{ color: '#9CA3AF', fontSize: '13px' }}>
+            Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total.toLocaleString()}
+          </span>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              style={{ padding: '6px 14px', border: '1px solid #E5E7EB', borderRadius: '5px', background: '#fff', fontSize: '13px', cursor: page === 0 ? 'not-allowed' : 'pointer', color: page === 0 ? '#D1D5DB' : '#374151', fontFamily: 'Inter, sans-serif' }}
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              style={{ padding: '6px 14px', border: '1px solid #E5E7EB', borderRadius: '5px', background: '#fff', fontSize: '13px', cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer', color: page >= totalPages - 1 ? '#D1D5DB' : '#374151', fontFamily: 'Inter, sans-serif' }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Export Modal ── */}
       {showExportModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'white', borderRadius: '14px', width: '560px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: '6px', width: '560px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.15)', border: '1px solid #E5E7EB' }}>
+
+            {/* Modal header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ color: '#0F172A', fontWeight: '700', fontSize: '15px' }}>Export Transactions</div>
-                <div style={{ color: '#64748B', fontSize: '12px', marginTop: '2px' }}>Filter & choose columns — Amount (USD) uses rate from transaction date</div>
+                <div style={{ color: '#111827', fontWeight: '700', fontSize: '15px', letterSpacing: '-0.2px' }}>Export Transactions</div>
+                <div style={{ color: '#9CA3AF', fontSize: '12px', marginTop: '3px' }}>Amount (USD) uses the exchange rate from each transaction's date</div>
               </div>
-              <button onClick={() => setShowExportModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}><X size={18} /></button>
+              <button onClick={() => setShowExportModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 0 }}>
+                <X size={16} />
+              </button>
             </div>
+
             <div style={{ overflowY: 'auto', flex: 1 }}>
-              <div style={{ padding: '16px 24px', borderBottom: '1px solid #F1F5F9' }}>
-                <div style={{ color: '#0F172A', fontSize: '12px', fontWeight: '700', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Filters</div>
+
+              {/* Filters section */}
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid #F3F4F6' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '14px' }}>Filters</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  {[
+                    { label: 'Date From', key: 'dateFrom', type: 'date' },
+                    { label: 'Date To',   key: 'dateTo',   type: 'date' },
+                  ].map(({ label, key, type }) => (
+                    <div key={key}>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', marginBottom: '5px' }}>{label}</label>
+                      <input
+                        type={type}
+                        value={exportFilters[key]}
+                        onChange={e => setExportFilters(f => ({ ...f, [key]: e.target.value }))}
+                        style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  ))}
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>Date From</label>
-                    <input type="date" value={exportFilters.dateFrom} onChange={e => setExportFilters(f => ({ ...f, dateFrom: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>Date To</label>
-                    <input type="date" value={exportFilters.dateTo} onChange={e => setExportFilters(f => ({ ...f, dateTo: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>Brand</label>
-                    <select value={exportFilters.brand} onChange={e => setExportFilters(f => ({ ...f, brand: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', marginBottom: '5px' }}>Brand</label>
+                    <select value={exportFilters.brand} onChange={e => setExportFilters(f => ({ ...f, brand: e.target.value }))} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', cursor: 'pointer' }}>
                       <option value="all">All Brands</option>
                       {brands.map(b => <option key={b} value={b}>{b}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>Status</label>
-                    <select value={exportFilters.status} onChange={e => setExportFilters(f => ({ ...f, status: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', marginBottom: '5px' }}>Status</label>
+                    <select value={exportFilters.status} onChange={e => setExportFilters(f => ({ ...f, status: e.target.value }))} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', cursor: 'pointer' }}>
                       <option value="all">All Statuses</option>
                       <option value="Success">Approved</option>
                       <option value="Failed">Declined</option>
@@ -392,65 +531,108 @@ export default function Transactions() {
                     </select>
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>Type</label>
-                    <select value={exportFilters.type} onChange={e => setExportFilters(f => ({ ...f, type: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', marginBottom: '5px' }}>Type</label>
+                    <select value={exportFilters.type} onChange={e => setExportFilters(f => ({ ...f, type: e.target.value }))} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', cursor: 'pointer' }}>
                       <option value="all">All Types</option>
                       <option value="Deposit">Deposit</option>
                       <option value="Withdrawal">Withdrawal</option>
                     </select>
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>First Name</label>
-                    <input type="text" placeholder="e.g. James" value={exportFilters.firstName} onChange={e => setExportFilters(f => ({ ...f, firstName: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif' }} />
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', marginBottom: '5px' }}>First Name</label>
+                    <input type="text" placeholder="e.g. James" value={exportFilters.firstName} onChange={e => setExportFilters(f => ({ ...f, firstName: e.target.value }))} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
                   </div>
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>Last Name</label>
-                    <input type="text" placeholder="e.g. Smith" value={exportFilters.lastName} onChange={e => setExportFilters(f => ({ ...f, lastName: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif' }} />
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', marginBottom: '5px' }}>Last Name</label>
+                    <input type="text" placeholder="e.g. Smith" value={exportFilters.lastName} onChange={e => setExportFilters(f => ({ ...f, lastName: e.target.value }))} style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
                   </div>
                 </div>
-                <button onClick={() => setExportFilters({ dateFrom: '', dateTo: '', brand: 'all', status: 'all', type: 'all', firstName: '', lastName: '' })} style={{ marginTop: '10px', fontSize: '12px', color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Clear filters</button>
+                <button
+                  onClick={() => setExportFilters({ dateFrom: '', dateTo: '', brand: 'all', status: 'all', type: 'all', firstName: '', lastName: '' })}
+                  style={{ marginTop: '10px', fontSize: '12px', color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'Inter, sans-serif' }}
+                >
+                  Clear filters
+                </button>
               </div>
-              <div style={{ padding: '16px 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                  <div style={{ color: '#0F172A', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Columns ({selectedCols.length}/{ALL_EXPORT_COLUMNS.length})</div>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button onClick={() => setSelectedCols(ALL_EXPORT_COLUMNS.map(c => c.key))} style={{ fontSize: '12px', fontWeight: '600', color: '#6366F1', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Select All</button>
-                    <button onClick={() => setSelectedCols([])} style={{ fontSize: '12px', fontWeight: '600', color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Clear All</button>
+
+              {/* Columns section */}
+              <div style={{ padding: '20px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                    Columns <span style={{ color: '#D1D5DB' }}>({selectedCols.length}/{ALL_EXPORT_COLUMNS.length})</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button onClick={() => setSelectedCols(ALL_EXPORT_COLUMNS.map(c => c.key))} style={{ fontSize: '12px', fontWeight: '600', color: '#111827', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Select all</button>
+                    <button onClick={() => setSelectedCols([])} style={{ fontSize: '12px', fontWeight: '500', color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Clear</button>
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px' }}>
                   {ALL_EXPORT_COLUMNS.map(col => {
                     const checked = selectedCols.includes(col.key);
                     return (
-                      <label key={col.key} onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 8px', borderRadius: '6px', cursor: 'pointer', background: checked ? '#EEF2FF' : 'transparent', transition: 'background 0.1s' }}>
-                        <input type="checkbox" checked={checked} onChange={() => setSelectedCols(prev => checked ? prev.filter(k => k !== col.key) : [...prev, col.key])} style={{ display: 'none' }} />
-                        {checked ? <CheckSquare size={15} color="#6366F1" /> : <Square size={15} color="#CBD5E1" />}
-                        <span style={{ fontSize: '12px', color: checked ? '#4338CA' : '#475569', fontWeight: checked ? '600' : '400' }}>{col.label}</span>
+                      <label
+                        key={col.key}
+                        onClick={e => e.stopPropagation()}
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', borderRadius: '5px', cursor: 'pointer', background: checked ? '#F9FAFB' : 'transparent' }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setSelectedCols(prev => checked ? prev.filter(k => k !== col.key) : [...prev, col.key])}
+                          style={{ display: 'none' }}
+                        />
+                        {checked
+                          ? <CheckSquare size={14} color="#111827" />
+                          : <Square size={14} color="#D1D5DB" />
+                        }
+                        <span style={{ fontSize: '12px', color: checked ? '#111827' : '#6B7280', fontWeight: checked ? '500' : '400' }}>{col.label}</span>
                       </label>
                     );
                   })}
                 </div>
               </div>
             </div>
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #E2E8F0', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowExportModal(false)} style={{ padding: '9px 20px', border: '1px solid #E2E8F0', borderRadius: '8px', background: 'white', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>Cancel</button>
-              <button onClick={exportExcel} disabled={selectedCols.length === 0 || exporting} style={{ padding: '9px 20px', background: selectedCols.length === 0 || exporting ? '#E2E8F0' : 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: selectedCols.length === 0 || exporting ? '#94A3B8' : 'white', cursor: selectedCols.length === 0 || exporting ? 'not-allowed' : 'pointer', minWidth: '160px' }}>
-                {exporting ? 'Fetching rates...' : <><Download size={13} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} />Export {selectedCols.length} Columns</>}
+
+            {/* Modal footer */}
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowExportModal(false)}
+                style={{ padding: '8px 18px', border: '1px solid #E5E7EB', borderRadius: '5px', background: '#fff', fontSize: '13px', fontWeight: '500', color: '#374151', cursor: 'pointer' }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = '#9CA3AF'}
+                onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={exportExcel}
+                disabled={selectedCols.length === 0 || exporting}
+                style={{
+                  padding: '8px 20px',
+                  background: selectedCols.length === 0 || exporting ? '#F3F4F6' : '#111827',
+                  border: '1px solid transparent',
+                  borderRadius: '5px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  color: selectedCols.length === 0 || exporting ? '#9CA3AF' : '#fff',
+                  cursor: selectedCols.length === 0 || exporting ? 'not-allowed' : 'pointer',
+                  minWidth: '160px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  justifyContent: 'center',
+                  letterSpacing: '0.1px',
+                }}
+              >
+                {exporting
+                  ? 'Fetching rates…'
+                  : <><Download size={13} />Export {selectedCols.length} columns</>
+                }
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '16px' }}>
-          <span style={{ color: '#64748B', fontSize: '13px' }}>Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total.toLocaleString()}</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ padding: '6px 14px', border: '1px solid #E2E8F0', borderRadius: '6px', background: 'white', fontSize: '13px', cursor: page === 0 ? 'not-allowed' : 'pointer', color: page === 0 ? '#CBD5E1' : '#475569', fontFamily: 'Inter, sans-serif' }}>Previous</button>
-            <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} style={{ padding: '6px 14px', border: '1px solid #E2E8F0', borderRadius: '6px', background: 'white', fontSize: '13px', cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer', color: page >= totalPages - 1 ? '#CBD5E1' : '#475569', fontFamily: 'Inter, sans-serif' }}>Next</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
