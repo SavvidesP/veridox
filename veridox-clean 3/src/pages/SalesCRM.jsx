@@ -159,14 +159,27 @@ export default function SalesCRM() {
 
   async function convertToClient(lead) {
     if (!window.confirm(`Convert ${lead.first_name} ${lead.last_name} to a client?`)) return;
-    const { data } = await supabase.from('clients').insert({
-      first_name: lead.first_name, last_name: lead.last_name,
-      email: lead.email, phone: lead.phone,
-      company: lead.company, country: lead.country,
+    const { data, error } = await supabase.from('clients').insert({
+      first_name: lead.first_name,
+      last_name: lead.last_name,
+      email: lead.email || null,
+      phone: lead.phone || null,
+      company_name: lead.company || null,
+      country: lead.country || null,
+      status: 'pending',
     }).select().single();
+    if (error) {
+      alert(`Error converting lead: ${error.message}`);
+      return;
+    }
     if (data) {
-      await supabase.from('sales_leads').update({ stage: 'closed_won', converted_client_id: data.id, updated_at: new Date().toISOString() }).eq('id', lead.id);
+      await supabase.from('sales_leads').update({
+        stage: 'closed_won',
+        converted_client_id: data.id,
+        updated_at: new Date().toISOString(),
+      }).eq('id', lead.id);
       fetchAll();
+      alert(`✅ ${lead.first_name} ${lead.last_name} converted to client!`);
     }
   }
 
