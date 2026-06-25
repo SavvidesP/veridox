@@ -1,31 +1,58 @@
-import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert, ShieldX, BarChart2, GitBranch, Menu, X, Plug, LineChart, Gift, Network, FileText, ArrowDownCircle, FolderOpen, MessageCircle, Briefcase } from 'lucide-react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert, ShieldX, BarChart2, GitBranch, Menu, X, Plug, LineChart, Gift, Network, FileText, ArrowDownCircle, FolderOpen, MessageCircle, Briefcase, ChevronDown, ChevronRight, CreditCard, Building2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import NotificationBell from './NotificationBell';
 import { useState, useEffect } from 'react';
 
-const navItems = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/clients', icon: Users, label: 'Clients' },
-  { to: '/pipeline', icon: Kanban, label: 'KYC Pipeline' },
-  { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions' },
-  { to: '/analytics', icon: BarChart2, label: 'Analytics' },
-  { to: '/routing', icon: Zap, label: 'Smart Routing' },
-  { to: '/cascading', icon: GitBranch, label: 'Cascading' },
-  { to: '/disputes', icon: ShieldAlert, label: 'Disputes' },
-  { to: '/fraud-rules', icon: ShieldX, label: 'Anti-Fraud' },
-  { to: '/trading-accounts', icon: LineChart, label: 'Trading Accounts' },
-  { to: '/bonus-management', icon: Gift, label: 'Bonus Management' },
-  { to: '/ib-affiliate', icon: Network, label: 'IB / Affiliate' },
-  { to: '/financial-reports', icon: FileText, label: 'Financial Reports' },
-  { to: '/withdrawal-approvals', icon: ArrowDownCircle, label: 'Withdrawals' },
-  { to: '/document-center', icon: FolderOpen, label: 'Document Center' },
-  { to: '/communication-center', icon: MessageCircle, label: 'Communications' },
-  { to: '/sales-crm', icon: Briefcase, label: 'Sales CRM' },
-  { to: '/integrations', icon: Plug, label: 'Integrations' },
-  { to: '/add-client', icon: UserPlus, label: 'Add Client' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
+const navGroups = [
+  {
+    label: 'Core',
+    icon: LayoutDashboard,
+    alwaysOpen: true,
+    items: [
+      { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+      { to: '/clients', icon: Users, label: 'Clients' },
+      { to: '/pipeline', icon: Kanban, label: 'KYC Pipeline' },
+    ],
+  },
+  {
+    label: 'Payments',
+    icon: CreditCard,
+    items: [
+      { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions' },
+      { to: '/analytics', icon: BarChart2, label: 'Analytics' },
+      { to: '/routing', icon: Zap, label: 'Smart Routing' },
+      { to: '/cascading', icon: GitBranch, label: 'Cascading' },
+      { to: '/disputes', icon: ShieldAlert, label: 'Disputes' },
+      { to: '/fraud-rules', icon: ShieldX, label: 'Anti-Fraud' },
+    ],
+  },
+  {
+    label: 'Forex Back Office',
+    icon: Building2,
+    items: [
+      { to: '/trading-accounts', icon: LineChart, label: 'Trading Accounts' },
+      { to: '/bonus-management', icon: Gift, label: 'Bonus Management' },
+      { to: '/ib-affiliate', icon: Network, label: 'IB / Affiliate' },
+      { to: '/financial-reports', icon: FileText, label: 'Financial Reports' },
+      { to: '/withdrawal-approvals', icon: ArrowDownCircle, label: 'Withdrawals' },
+      { to: '/document-center', icon: FolderOpen, label: 'Document Center' },
+      { to: '/communication-center', icon: MessageCircle, label: 'Communications' },
+      { to: '/sales-crm', icon: Briefcase, label: 'Sales CRM' },
+    ],
+  },
+  {
+    label: 'System',
+    icon: Settings,
+    items: [
+      { to: '/integrations', icon: Plug, label: 'Integrations' },
+      { to: '/add-client', icon: UserPlus, label: 'Add Client' },
+      { to: '/settings', icon: Settings, label: 'Settings' },
+    ],
+  },
 ];
+
+const allNavItems = navGroups.flatMap(g => g.items);
 
 const mobileNavItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Home' },
@@ -35,11 +62,65 @@ const mobileNavItems = [
   { to: '/analytics', icon: BarChart2, label: 'Analytics' },
 ];
 
+function NavGroup({ group, openGroups, setOpenGroups }) {
+  const location = useLocation();
+  const isOpen = openGroups.includes(group.label);
+  const isActive = group.items.some(item => location.pathname === item.to);
+  const Icon = group.icon;
+
+  if (group.alwaysOpen) {
+    return (
+      <div style={{ marginBottom: '4px' }}>
+        <div style={{ color: '#475569', fontSize: '10px', fontWeight: '600', letterSpacing: '1px', padding: '8px 10px 4px', textTransform: 'uppercase' }}>{group.label}</div>
+        {group.items.map(({ to, icon: ItemIcon, label }) => (
+          <NavLink key={to} to={to} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '8px', marginBottom: '2px', textDecoration: 'none', fontSize: '13.5px', fontWeight: isActive ? '600' : '400', color: isActive ? 'white' : '#94A3B8', background: isActive ? 'rgba(99,102,241,0.15)' : 'transparent', borderLeft: isActive ? '2px solid #6366F1' : '2px solid transparent', transition: 'all 0.15s ease' })}>
+            <ItemIcon size={16} />
+            {label}
+          </NavLink>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: '4px' }}>
+      <button
+        onClick={() => setOpenGroups(prev => prev.includes(group.label) ? prev.filter(g => g !== group.label) : [...prev, group.label])}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '8px', border: 'none', background: isActive ? 'rgba(99,102,241,0.1)' : 'transparent', cursor: 'pointer', color: isActive ? 'white' : '#94A3B8', fontSize: '13.5px', fontWeight: isActive ? '600' : '500', textAlign: 'left', transition: 'all 0.15s ease' }}>
+        <Icon size={16} />
+        <span style={{ flex: 1 }}>{group.label}</span>
+        {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+      </button>
+      {isOpen && (
+        <div style={{ marginLeft: '12px', borderLeft: '1px solid #1E293B', paddingLeft: '8px', marginTop: '2px' }}>
+          {group.items.map(({ to, icon: ItemIcon, label }) => (
+            <NavLink key={to} to={to} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', marginBottom: '2px', textDecoration: 'none', fontSize: '13px', fontWeight: isActive ? '600' : '400', color: isActive ? 'white' : '#94A3B8', background: isActive ? 'rgba(99,102,241,0.15)' : 'transparent', borderLeft: isActive ? '2px solid #6366F1' : '2px solid transparent', transition: 'all 0.15s ease' })}>
+              <ItemIcon size={15} />
+              {label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Layout({ children }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { signOut, profile, user } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [openGroups, setOpenGroups] = useState(['Payments']); // default open
+
+  // Auto-open group when navigating to a child route
+  useEffect(() => {
+    navGroups.forEach(group => {
+      if (!group.alwaysOpen && group.items.some(item => location.pathname === item.to)) {
+        setOpenGroups(prev => prev.includes(group.label) ? prev : [...prev, group.label]);
+      }
+    });
+  }, [location.pathname]);
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768);
@@ -94,7 +175,7 @@ export default function Layout({ children }) {
               </button>
             </div>
             <nav style={{ flex: 1, padding: '12px', overflowY: 'auto' }}>
-              {navItems.map(({ to, icon: Icon, label }) => (
+              {allNavItems.map(({ to, icon: Icon, label }) => (
                 <NavLink key={to} to={to} onClick={() => setMobileMenuOpen(false)}
                   style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 14px', borderRadius: '10px', marginBottom: '4px', textDecoration: 'none', fontSize: '15px', fontWeight: isActive ? '600' : '400', color: isActive ? 'white' : '#94A3B8', background: isActive ? 'rgba(99,102,241,0.15)' : 'transparent', borderLeft: isActive ? '2px solid #6366F1' : '2px solid transparent' })}>
                   <Icon size={18} />
@@ -152,12 +233,8 @@ export default function Layout({ children }) {
         </div>
 
         <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto' }}>
-          <div style={{ color: '#475569', fontSize: '10px', fontWeight: '600', letterSpacing: '1px', padding: '8px 10px 4px', textTransform: 'uppercase' }}>Menu</div>
-          {navItems.map(({ to, icon: Icon, label }) => (
-            <NavLink key={to} to={to} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '8px', marginBottom: '2px', textDecoration: 'none', fontSize: '13.5px', fontWeight: isActive ? '600' : '400', color: isActive ? 'white' : '#94A3B8', background: isActive ? 'rgba(99,102,241,0.15)' : 'transparent', borderLeft: isActive ? '2px solid #6366F1' : '2px solid transparent', transition: 'all 0.15s ease' })}>
-              <Icon size={16} />
-              {label}
-            </NavLink>
+          {navGroups.map(group => (
+            <NavGroup key={group.label} group={group} openGroups={openGroups} setOpenGroups={setOpenGroups} />
           ))}
         </nav>
 
