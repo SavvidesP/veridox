@@ -65,16 +65,23 @@ const mobileNavItems = [
 function NavGroup({ group, openGroups, setOpenGroups }) {
   const location = useLocation();
   const isOpen = openGroups.includes(group.label);
-  const isActive = group.items.some(item => location.pathname === item.to);
+  const hasActive = group.items.some(item => location.pathname === item.to);
   const Icon = group.icon;
 
   if (group.alwaysOpen) {
     return (
-      <div style={{ marginBottom: '4px' }}>
-        <div style={{ color: '#475569', fontSize: '10px', fontWeight: '600', letterSpacing: '1px', padding: '8px 10px 4px', textTransform: 'uppercase' }}>{group.label}</div>
+      <div style={{ marginBottom: '8px' }}>
+        <div style={{ color: '#9CA3AF', fontSize: '10px', fontWeight: '600', letterSpacing: '1px', padding: '6px 10px 4px', textTransform: 'uppercase' }}>{group.label}</div>
         {group.items.map(({ to, icon: ItemIcon, label }) => (
-          <NavLink key={to} to={to} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '8px', marginBottom: '2px', textDecoration: 'none', fontSize: '13.5px', fontWeight: isActive ? '600' : '400', color: isActive ? 'white' : '#94A3B8', background: isActive ? 'rgba(99,102,241,0.15)' : 'transparent', borderLeft: isActive ? '2px solid #6366F1' : '2px solid transparent', transition: 'all 0.15s ease' })}>
-            <ItemIcon size={16} />
+          <NavLink key={to} to={to} style={({ isActive }) => ({
+            display: 'flex', alignItems: 'center', gap: '9px', padding: '8px 10px', borderRadius: '6px',
+            marginBottom: '1px', textDecoration: 'none', fontSize: '13.5px',
+            fontWeight: isActive ? '600' : '400',
+            color: isActive ? '#111827' : '#6B7280',
+            background: isActive ? '#F3F4F6' : 'transparent',
+            transition: 'all 0.1s ease',
+          })}>
+            <ItemIcon size={15} />
             {label}
           </NavLink>
         ))}
@@ -86,16 +93,34 @@ function NavGroup({ group, openGroups, setOpenGroups }) {
     <div style={{ marginBottom: '4px' }}>
       <button
         onClick={() => setOpenGroups(prev => prev.includes(group.label) ? prev.filter(g => g !== group.label) : [...prev, group.label])}
-        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', borderRadius: '8px', border: 'none', background: isActive ? 'rgba(99,102,241,0.1)' : 'transparent', cursor: 'pointer', color: isActive ? 'white' : '#94A3B8', fontSize: '13.5px', fontWeight: isActive ? '600' : '500', textAlign: 'left', transition: 'all 0.15s ease' }}>
-        <Icon size={16} />
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: '9px',
+          padding: '8px 10px', borderRadius: '6px', border: 'none',
+          background: hasActive && !isOpen ? '#F3F4F6' : 'transparent',
+          cursor: 'pointer', color: hasActive ? '#111827' : '#6B7280',
+          fontSize: '13.5px', fontWeight: hasActive ? '600' : '500',
+          textAlign: 'left', transition: 'all 0.1s ease',
+        }}
+        onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
+        onMouseLeave={e => e.currentTarget.style.background = hasActive && !isOpen ? '#F3F4F6' : 'transparent'}>
+        <Icon size={15} />
         <span style={{ flex: 1 }}>{group.label}</span>
-        {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        {isOpen ? <ChevronDown size={13} color="#9CA3AF" /> : <ChevronRight size={13} color="#9CA3AF" />}
       </button>
       {isOpen && (
-        <div style={{ marginLeft: '12px', borderLeft: '1px solid #1E293B', paddingLeft: '8px', marginTop: '2px' }}>
+        <div style={{ marginLeft: '10px', paddingLeft: '12px', borderLeft: '1px solid #E5E7EB', marginTop: '2px', marginBottom: '4px' }}>
           {group.items.map(({ to, icon: ItemIcon, label }) => (
-            <NavLink key={to} to={to} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', marginBottom: '2px', textDecoration: 'none', fontSize: '13px', fontWeight: isActive ? '600' : '400', color: isActive ? 'white' : '#94A3B8', background: isActive ? 'rgba(99,102,241,0.15)' : 'transparent', borderLeft: isActive ? '2px solid #6366F1' : '2px solid transparent', transition: 'all 0.15s ease' })}>
-              <ItemIcon size={15} />
+            <NavLink key={to} to={to} style={({ isActive }) => ({
+              display: 'flex', alignItems: 'center', gap: '9px', padding: '7px 10px', borderRadius: '6px',
+              marginBottom: '1px', textDecoration: 'none', fontSize: '13px',
+              fontWeight: isActive ? '600' : '400',
+              color: isActive ? '#111827' : '#6B7280',
+              background: isActive ? '#F3F4F6' : 'transparent',
+              transition: 'all 0.1s ease',
+            })}
+            onMouseEnter={e => { if (!e.currentTarget.classList.contains('active')) e.currentTarget.style.background = '#F9FAFB'; e.currentTarget.style.color = '#374151'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = ''; e.currentTarget.style.color = ''; }}>
+              <ItemIcon size={14} />
               {label}
             </NavLink>
           ))}
@@ -111,9 +136,8 @@ export default function Layout({ children }) {
   const { signOut, profile, user } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [openGroups, setOpenGroups] = useState(['Payments']); // default open
+  const [openGroups, setOpenGroups] = useState(['Payments']);
 
-  // Auto-open group when navigating to a child route
   useEffect(() => {
     navGroups.forEach(group => {
       if (!group.alwaysOpen && group.items.some(item => location.pathname === item.to)) {
@@ -139,58 +163,58 @@ export default function Layout({ children }) {
 
   if (isMobile) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#F1F5F9', fontFamily: "'Inter', sans-serif" }}>
-        <header style={{ background: '#0F172A', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1E293B', flexShrink: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#F9FAFB', fontFamily: "'Inter', sans-serif" }}>
+        <header style={{ background: 'white', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #E5E7EB', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '28px', height: '28px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '28px', height: '28px', background: '#111827', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
                 <path d="M4 9 L7.5 13 L14 6" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </div>
-            <span style={{ color: 'white', fontWeight: '700', fontSize: '16px' }}>Veridox</span>
+            <span style={{ color: '#111827', fontWeight: '700', fontSize: '16px' }}>Veridox</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <NotificationBell />
             <button onClick={() => setMobileMenuOpen(true)}
-              style={{ background: '#1E293B', border: '1px solid #334155', borderRadius: '8px', padding: '7px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-              <Menu size={18} color="#94A3B8" />
+              style={{ background: '#F3F4F6', border: '1px solid #E5E7EB', borderRadius: '8px', padding: '7px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+              <Menu size={18} color="#6B7280" />
             </button>
           </div>
         </header>
 
         {mobileMenuOpen && (
-          <div style={{ position: 'fixed', inset: 0, background: '#0F172A', zIndex: 9999, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1E293B' }}>
+          <div style={{ position: 'fixed', inset: 0, background: 'white', zIndex: 9999, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #E5E7EB' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ width: '28px', height: '28px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: '28px', height: '28px', background: '#111827', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
                     <path d="M4 9 L7.5 13 L14 6" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </div>
-                <span style={{ color: 'white', fontWeight: '700', fontSize: '16px' }}>Veridox</span>
+                <span style={{ color: '#111827', fontWeight: '700', fontSize: '16px' }}>Veridox</span>
               </div>
               <button onClick={() => setMobileMenuOpen(false)}
-                style={{ background: '#1E293B', border: '1px solid #334155', borderRadius: '8px', padding: '7px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                <X size={18} color="#94A3B8" />
+                style={{ background: '#F3F4F6', border: '1px solid #E5E7EB', borderRadius: '8px', padding: '7px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                <X size={18} color="#6B7280" />
               </button>
             </div>
             <nav style={{ flex: 1, padding: '12px', overflowY: 'auto' }}>
               {allNavItems.map(({ to, icon: Icon, label }) => (
                 <NavLink key={to} to={to} onClick={() => setMobileMenuOpen(false)}
-                  style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 14px', borderRadius: '10px', marginBottom: '4px', textDecoration: 'none', fontSize: '15px', fontWeight: isActive ? '600' : '400', color: isActive ? 'white' : '#94A3B8', background: isActive ? 'rgba(99,102,241,0.15)' : 'transparent', borderLeft: isActive ? '2px solid #6366F1' : '2px solid transparent' })}>
+                  style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 14px', borderRadius: '8px', marginBottom: '2px', textDecoration: 'none', fontSize: '15px', fontWeight: isActive ? '600' : '400', color: isActive ? '#111827' : '#6B7280', background: isActive ? '#F3F4F6' : 'transparent' })}>
                   <Icon size={18} />
                   {label}
                 </NavLink>
               ))}
             </nav>
-            <div style={{ padding: '16px', borderTop: '1px solid #1E293B' }}>
+            <div style={{ padding: '16px', borderTop: '1px solid #E5E7EB' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '36px', height: '36px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '13px', fontWeight: '700' }}>{initials}</div>
+                <div style={{ width: '36px', height: '36px', background: '#111827', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '13px', fontWeight: '700' }}>{initials}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ color: 'white', fontSize: '13px', fontWeight: '600' }}>{profile?.full_name || user?.email?.split('@')[0]}</div>
-                  <div style={{ color: '#475569', fontSize: '11px', textTransform: 'capitalize' }}>{profile?.role || 'analyst'}</div>
+                  <div style={{ color: '#111827', fontSize: '13px', fontWeight: '600' }}>{profile?.full_name || user?.email?.split('@')[0]}</div>
+                  <div style={{ color: '#9CA3AF', fontSize: '11px', textTransform: 'capitalize' }}>{profile?.role || 'analyst'}</div>
                 </div>
-                <button onClick={handleSignOut} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475569' }}>
+                <button onClick={handleSignOut} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}>
                   <LogOut size={16} />
                 </button>
               </div>
@@ -202,10 +226,10 @@ export default function Layout({ children }) {
           {children}
         </main>
 
-        <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#0F172A', borderTop: '1px solid #1E293B', display: 'flex', zIndex: 100 }}>
+        <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'white', borderTop: '1px solid #E5E7EB', display: 'flex', zIndex: 100 }}>
           {mobileNavItems.map(({ to, icon: Icon, label }) => (
             <NavLink key={to} to={to}
-              style={({ isActive }) => ({ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', padding: '10px 4px', textDecoration: 'none', color: isActive ? '#6366F1' : '#475569', borderTop: isActive ? '2px solid #6366F1' : '2px solid transparent' })}>
+              style={({ isActive }) => ({ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', padding: '10px 4px', textDecoration: 'none', color: isActive ? '#111827' : '#9CA3AF', borderTop: isActive ? '2px solid #111827' : '2px solid transparent' })}>
               <Icon size={20} />
               <span style={{ fontSize: '10px', fontWeight: '600' }}>{label}</span>
             </NavLink>
@@ -216,39 +240,42 @@ export default function Layout({ children }) {
   }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#F1F5F9', fontFamily: "'Inter', sans-serif" }}>
-      <aside style={{ width: '240px', minWidth: '240px', background: '#0F172A', display: 'flex', flexDirection: 'column', borderRight: '1px solid #1E293B' }}>
-        <div style={{ padding: '24px 20px 20px', borderBottom: '1px solid #1E293B' }}>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#F9FAFB', fontFamily: "'Inter', sans-serif" }}>
+      <aside style={{ width: '240px', minWidth: '240px', background: '#F8FAFC', display: 'flex', flexDirection: 'column', borderRight: '1px solid #E5E7EB' }}>
+        {/* Logo */}
+        <div style={{ padding: '20px 16px 16px', borderBottom: '1px solid #E5E7EB' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '32px', height: '32px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <div style={{ width: '30px', height: '30px', background: '#111827', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
                 <path d="M4 9 L7.5 13 L14 6" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </div>
             <div>
-              <div style={{ color: 'white', fontWeight: '700', fontSize: '16px', letterSpacing: '-0.3px' }}>Veridox</div>
-              <div style={{ color: '#475569', fontSize: '11px', fontWeight: '500', letterSpacing: '0.5px' }}>COMPLIANCE CRM</div>
+              <div style={{ color: '#111827', fontWeight: '700', fontSize: '15px', letterSpacing: '-0.3px' }}>Veridox</div>
+              <div style={{ color: '#9CA3AF', fontSize: '10px', fontWeight: '500', letterSpacing: '0.3px' }}>Compliance CRM</div>
             </div>
           </div>
         </div>
 
+        {/* Nav */}
         <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto' }}>
           {navGroups.map(group => (
             <NavGroup key={group.label} group={group} openGroups={openGroups} setOpenGroups={setOpenGroups} />
           ))}
         </nav>
 
-        <div style={{ padding: '16px', borderTop: '1px solid #1E293B' }}>
+        {/* User */}
+        <div style={{ padding: '12px 16px', borderTop: '1px solid #E5E7EB' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '32px', height: '32px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '12px', fontWeight: '700' }}>{initials}</div>
+            <div style={{ width: '30px', height: '30px', background: '#111827', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '11px', fontWeight: '700', flexShrink: 0 }}>{initials}</div>
             <div style={{ flex: 1, overflow: 'hidden' }}>
-              <div style={{ color: 'white', fontSize: '13px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile?.full_name || user?.email?.split('@')[0] || 'User'}</div>
-              <div style={{ color: '#475569', fontSize: '11px', textTransform: 'capitalize' }}>{profile?.role || 'analyst'}</div>
+              <div style={{ color: '#111827', fontSize: '12px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile?.full_name || user?.email?.split('@')[0] || 'User'}</div>
+              <div style={{ color: '#9CA3AF', fontSize: '11px', textTransform: 'capitalize' }}>{profile?.role || 'analyst'}</div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <NotificationBell />
-              <button onClick={handleSignOut} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: '4px' }} title="Sign out">
-                <LogOut size={15} />
+              <button onClick={handleSignOut} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: '4px' }} title="Sign out">
+                <LogOut size={14} />
               </button>
             </div>
           </div>
