@@ -82,8 +82,8 @@ const typeBadge = (t) => {
   return (
     <span style={{
       background: 'transparent',
-      color: isDeposit ? '#111827' : '#6B7280',
-      border: `1px solid ${isDeposit ? '#D1D5DB' : '#E5E7EB'}`,
+      color: isDeposit ? '#2563EB' : '#D97706',
+      border: `1px solid ${isDeposit ? '#BFDBFE' : '#FDE68A'}`,
       padding: '2px 10px',
       borderRadius: '4px',
       fontSize: '11px',
