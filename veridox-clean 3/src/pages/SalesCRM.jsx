@@ -1,24 +1,72 @@
 import { useEffect, useState, useRef } from 'react';
-import { Plus, X, Edit2, Trash2, User, TrendingUp, Target, Clock, CheckCircle, Upload, Download, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, X, Edit2, Trash2, Clock, CheckCircle, Upload, Download, ChevronUp, ChevronDown, User, TrendingUp, Target } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
-const stageStyle = (s) => ({
-  prospecting: { background: '#F1F5F9', color: '#475569' },
-  qualified: { background: '#EEF2FF', color: '#4338CA' },
-  proposal: { background: '#FFF7ED', color: '#C2410C' },
-  negotiation: { background: '#FEF9C3', color: '#854D0E' },
-  closed_won: { background: '#DCFCE7', color: '#166534' },
-  closed_lost: { background: '#FEE2E2', color: '#991B1B' },
-}[s] || { background: '#F1F5F9', color: '#475569' });
+// ── Badge helpers — same pattern as Dashboard kycBadge ──
+const stageBadge = (s) => {
+  const map = {
+    prospecting:  { color: '#6B7280', border: '#E5E7EB' },
+    qualified:    { color: '#2563EB', border: '#BFDBFE' },
+    proposal:     { color: '#D97706', border: '#FDE68A' },
+    negotiation:  { color: '#7C3AED', border: '#DDD6FE' },
+    closed_won:   { color: '#16A34A', border: '#BBF7D0' },
+    closed_lost:  { color: '#DC2626', border: '#FECACA' },
+  };
+  const t = map[s] || map.prospecting;
+  const label = s?.replace('_', ' ') || s;
+  return (
+    <span style={{
+      background: 'transparent',
+      color: t.color,
+      border: `1px solid ${t.border}`,
+      padding: '2px 10px',
+      borderRadius: '4px',
+      fontSize: '11px',
+      fontWeight: '600',
+      letterSpacing: '0.3px',
+      textTransform: 'capitalize',
+    }}>
+      {label}
+    </span>
+  );
+};
 
-const sourceStyle = (s) => ({
-  manual: { background: '#F1F5F9', color: '#475569' },
-  website: { background: '#EEF2FF', color: '#4338CA' },
-  referral: { background: '#ECFDF5', color: '#059669' },
-  social: { background: '#FFF7ED', color: '#C2410C' },
-  email: { background: '#F5F3FF', color: '#7C3AED' },
-  cold_call: { background: '#FEF9C3', color: '#854D0E' },
-}[s] || { background: '#F1F5F9', color: '#475569' });
+const sourceBadge = (s) => {
+  const map = {
+    manual:    { color: '#6B7280', border: '#E5E7EB' },
+    website:   { color: '#2563EB', border: '#BFDBFE' },
+    referral:  { color: '#16A34A', border: '#BBF7D0' },
+    social:    { color: '#D97706', border: '#FDE68A' },
+    email:     { color: '#7C3AED', border: '#DDD6FE' },
+    cold_call: { color: '#9CA3AF', border: '#E5E7EB' },
+  };
+  const t = map[s] || map.manual;
+  return (
+    <span style={{
+      background: 'transparent',
+      color: t.color,
+      border: `1px solid ${t.border}`,
+      padding: '2px 10px',
+      borderRadius: '4px',
+      fontSize: '11px',
+      fontWeight: '600',
+      letterSpacing: '0.3px',
+      textTransform: 'capitalize',
+    }}>
+      {s?.replace('_', ' ')}
+    </span>
+  );
+};
+
+// For kanban column headers (needs background for visual grouping)
+const stageColors = {
+  prospecting:  { color: '#6B7280', border: '#E5E7EB' },
+  qualified:    { color: '#2563EB', border: '#BFDBFE' },
+  proposal:     { color: '#D97706', border: '#FDE68A' },
+  negotiation:  { color: '#7C3AED', border: '#DDD6FE' },
+  closed_won:   { color: '#16A34A', border: '#BBF7D0' },
+  closed_lost:  { color: '#DC2626', border: '#FECACA' },
+};
 
 function formatAmount(v) {
   if (!v) return '$0';
@@ -26,24 +74,29 @@ function formatAmount(v) {
 }
 
 function formatDate(v) {
-  if (!v) return '-';
+  if (!v) return '—';
   return new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 const stages = ['prospecting', 'qualified', 'proposal', 'negotiation', 'closed_won', 'closed_lost'];
 
 const SORT_FIELDS = [
-  { key: 'first_name', label: 'Name' },
-  { key: 'company', label: 'Company' },
-  { key: 'stage', label: 'Stage' },
+  { key: 'first_name',      label: 'Name' },
+  { key: 'company',         label: 'Company' },
+  { key: 'stage',           label: 'Stage' },
   { key: 'estimated_value', label: 'Value' },
-  { key: 'next_followup_at', label: 'Follow-up' },
-  { key: 'created_at', label: 'Date Added' },
+  { key: 'next_followup_at',label: 'Follow-up' },
+  { key: 'created_at',      label: 'Date Added' },
 ];
+
+const sectionLabel = (text) => (
+  <div style={{ fontSize: '11px', fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>{text}</div>
+);
+
+const divider = <div style={{ borderTop: '1px solid #F3F4F6', margin: '28px 0' }} />;
 
 export default function SalesCRM() {
   const [leads, setLeads] = useState([]);
-  const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -67,12 +120,8 @@ export default function SalesCRM() {
 
   async function fetchAll() {
     setLoading(true);
-    const [{ data: leadData }, { data: cliData }] = await Promise.all([
-      supabase.from('sales_leads').select('*').order('created_at', { ascending: false }),
-      supabase.from('clients').select('id, first_name, last_name').order('first_name'),
-    ]);
+    const { data: leadData } = await supabase.from('sales_leads').select('*').order('created_at', { ascending: false });
     setLeads(leadData || []);
-    setClients(cliData || []);
     setLoading(false);
   }
 
@@ -118,34 +167,25 @@ export default function SalesCRM() {
     if (data) {
       await supabase.from('sales_leads').update({ stage: 'closed_won', converted_client_id: data.id, updated_at: new Date().toISOString() }).eq('id', lead.id);
       fetchAll();
-      alert(`✅ ${lead.first_name} ${lead.last_name} converted to client!`);
     }
   }
 
-  // ---- SORT ----
   function handleSort(key) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('asc'); }
   }
 
-  // ---- EXPORT ----
   async function exportExcel() {
     const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
     const rows = filtered.map(l => ({
-      'First Name': l.first_name,
-      'Last Name': l.last_name,
-      'Email': l.email || '',
-      'Phone': l.phone || '',
-      'Company': l.company || '',
-      'Country': l.country || '',
-      'Source': l.source || '',
-      'Stage': l.stage || '',
-      'Estimated Value': l.estimated_value || 0,
-      'Currency': l.currency || 'USD',
+      'First Name': l.first_name, 'Last Name': l.last_name,
+      'Email': l.email || '', 'Phone': l.phone || '',
+      'Company': l.company || '', 'Country': l.country || '',
+      'Source': l.source || '', 'Stage': l.stage || '',
+      'Estimated Value': l.estimated_value || 0, 'Currency': l.currency || 'USD',
       'Assigned To': l.assigned_to || '',
       'Next Follow-up': l.next_followup_at ? formatDate(l.next_followup_at) : '',
-      'Notes': l.notes || '',
-      'Date Added': formatDate(l.created_at),
+      'Notes': l.notes || '', 'Date Added': formatDate(l.created_at),
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -153,7 +193,6 @@ export default function SalesCRM() {
     XLSX.writeFile(wb, `sales-leads-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
-  // ---- IMPORT ----
   async function handleImport(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -177,16 +216,14 @@ export default function SalesCRM() {
       notes: r['Notes'] || r['notes'] || null,
       status: 'active',
     })).filter(r => r.first_name);
-    if (mapped.length === 0) { alert('No valid rows found. Make sure columns match the template.'); return; }
+    if (!mapped.length) { alert('No valid rows found.'); return; }
     for (let i = 0; i < mapped.length; i += 100) {
       await supabase.from('sales_leads').insert(mapped.slice(i, i + 100));
     }
-    alert(`✅ Imported ${mapped.length} leads!`);
     fetchAll();
     e.target.value = '';
   }
 
-  // ---- FILTER + SORT ----
   const filtered = leads
     .filter(l => {
       if (filterStage !== 'all' && l.stage !== filterStage) return false;
@@ -207,114 +244,171 @@ export default function SalesCRM() {
       return 0;
     });
 
-  const totalValue = leads.filter(l => l.stage === 'closed_won').reduce((s, l) => s + (parseFloat(l.estimated_value) || 0), 0);
+  const totalValue    = leads.filter(l => l.stage === 'closed_won').reduce((s, l) => s + (parseFloat(l.estimated_value) || 0), 0);
   const pipelineValue = leads.filter(l => !['closed_won', 'closed_lost'].includes(l.stage)).reduce((s, l) => s + (parseFloat(l.estimated_value) || 0), 0);
-  const wonCount = leads.filter(l => l.stage === 'closed_won').length;
+  const wonCount      = leads.filter(l => l.stage === 'closed_won').length;
   const conversionRate = leads.length > 0 ? Math.round((wonCount / leads.length) * 100) : 0;
 
-  const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif' };
-  const labelStyle = { display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' };
+  // ── shared input style matching Dashboard ──
+  const inputStyle = {
+    width: '100%', boxSizing: 'border-box',
+    padding: '7px 10px',
+    border: '1px solid #E5E7EB',
+    borderRadius: '5px',
+    fontSize: '13px',
+    color: '#111827',
+    outline: 'none',
+    fontFamily: 'Inter, sans-serif',
+    background: '#fff',
+  };
+  const labelStyle = {
+    display: 'block', fontSize: '11px', fontWeight: '600',
+    color: '#6B7280', marginBottom: '5px',
+  };
 
   function SortIcon({ field }) {
-    if (sortKey !== field) return <ChevronUp size={12} color="#CBD5E1" />;
-    return sortDir === 'asc' ? <ChevronUp size={12} color="#6366F1" /> : <ChevronDown size={12} color="#6366F1" />;
+    if (sortKey !== field) return <ChevronUp size={12} color="#D1D5DB" />;
+    return sortDir === 'asc' ? <ChevronUp size={12} color="#111827" /> : <ChevronDown size={12} color="#111827" />;
   }
 
   return (
-    <div style={{ padding: '32px', fontFamily: "'Inter', sans-serif" }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+    <div style={{ padding: '40px 44px', fontFamily: "'Inter', sans-serif", background: '#fff', minHeight: '100vh', maxWidth: '1280px' }}>
+
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '36px' }}>
         <div>
-          <h1 style={{ color: '#0F172A', fontSize: '22px', fontWeight: '700', margin: 0, letterSpacing: '-0.5px' }}>Sales CRM</h1>
-          <p style={{ color: '#64748B', fontSize: '13px', margin: '4px 0 0' }}>{leads.length} total leads</p>
+          <h1 style={{ color: '#111827', fontSize: '26px', fontWeight: '700', margin: 0, letterSpacing: '-0.5px' }}>Sales CRM</h1>
+          <p style={{ color: '#9CA3AF', fontSize: '13px', margin: '5px 0 0', fontWeight: '400' }}>{leads.length} total leads</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '8px', padding: '3px' }}>
-            <button onClick={() => setView('table')} style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: view === 'table' ? 'white' : 'transparent', fontSize: '13px', fontWeight: '600', color: view === 'table' ? '#0F172A' : '#64748B', cursor: 'pointer', boxShadow: view === 'table' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Table</button>
-            <button onClick={() => setView('kanban')} style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: view === 'kanban' ? 'white' : 'transparent', fontSize: '13px', fontWeight: '600', color: view === 'kanban' ? '#0F172A' : '#64748B', cursor: 'pointer', boxShadow: view === 'kanban' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Kanban</button>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* View toggle */}
+          <div style={{ display: 'flex', border: '1px solid #E5E7EB', borderRadius: '5px', overflow: 'hidden' }}>
+            {['table', 'kanban'].map(v => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                style={{
+                  padding: '7px 16px',
+                  border: 'none',
+                  borderRight: v === 'table' ? '1px solid #E5E7EB' : 'none',
+                  background: view === v ? '#111827' : '#fff',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: view === v ? '#fff' : '#374151',
+                  cursor: 'pointer',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {v}
+              </button>
+            ))}
           </div>
-          <button onClick={() => fileRef.current.click()}
-            style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'white', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>
-            <Upload size={14} /> Import Excel
+
+          <button
+            onClick={() => fileRef.current.click()}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 18px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '5px', fontSize: '13px', fontWeight: '500', color: '#374151', cursor: 'pointer' }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = '#9CA3AF'}
+            onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}
+          >
+            <Upload size={13} /> Import
           </button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} />
-          <button onClick={exportExcel}
-            style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'white', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>
-            <Download size={14} /> Export Excel
+
+          <button
+            onClick={exportExcel}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 18px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '5px', fontSize: '13px', fontWeight: '500', color: '#374151', cursor: 'pointer' }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = '#9CA3AF'}
+            onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}
+          >
+            <Download size={13} /> Export
           </button>
-          <button onClick={() => setShowModal(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: 'white', cursor: 'pointer' }}>
-            <Plus size={14} /> Add Lead
+
+          <button
+            onClick={() => setShowModal(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 18px', background: '#111827', border: '1px solid #111827', borderRadius: '5px', fontSize: '13px', fontWeight: '600', color: '#fff', cursor: 'pointer', letterSpacing: '0.1px' }}
+          >
+            <Plus size={13} /> Add Lead
           </button>
         </div>
       </div>
 
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+      {/* ── Stats ── */}
+      {sectionLabel('Pipeline Overview')}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '32px' }}>
         {[
-          { label: 'Total Leads', value: leads.length, color: '#6366F1', bg: '#EEF2FF', icon: User },
-          { label: 'Pipeline Value', value: formatAmount(pipelineValue), color: '#0369A1', bg: '#E0F2FE', icon: TrendingUp },
-          { label: 'Won Revenue', value: formatAmount(totalValue), color: '#059669', bg: '#ECFDF5', icon: Target },
-          { label: 'Conversion Rate', value: `${conversionRate}%`, color: '#7C3AED', bg: '#F5F3FF', icon: CheckCircle },
-        ].map(({ label, value, color, bg, icon: Icon }) => (
-          <div key={label} style={{ background: 'white', borderRadius: '10px', border: '1px solid #E2E8F0', padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748B' }}>{label}</span>
-              <div style={{ background: bg, padding: '6px', borderRadius: '6px' }}><Icon size={14} color={color} /></div>
-            </div>
-            <div style={{ fontSize: '22px', fontWeight: '700', color: '#0F172A' }}>{value}</div>
+          { label: 'Total Leads',      value: leads.length },
+          { label: 'Pipeline Value',   value: formatAmount(pipelineValue) },
+          { label: 'Won Revenue',      value: formatAmount(totalValue) },
+          { label: 'Conversion Rate',  value: `${conversionRate}%` },
+        ].map(({ label, value }) => (
+          <div key={label} style={{ background: '#fff', borderRadius: '6px', padding: '24px 28px', border: '1px solid #E5E7EB' }}>
+            <div style={{ color: '#9CA3AF', fontSize: '11px', fontWeight: '600', letterSpacing: '0.7px', textTransform: 'uppercase', marginBottom: '14px' }}>{label}</div>
+            <div style={{ color: '#111827', fontSize: '32px', fontWeight: '700', letterSpacing: '-1px', lineHeight: 1 }}>{loading ? '—' : value}</div>
           </div>
         ))}
       </div>
 
-      {/* Filters + Sort */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, email, company..."
-          style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', outline: 'none', width: '220px', fontFamily: 'Inter, sans-serif' }} />
-        <select value={filterStage} onChange={e => setFilterStage(e.target.value)}
-          style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'Inter, sans-serif' }}>
+      {divider}
+
+      {/* ── Filters ── */}
+      {sectionLabel('Filters')}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search name, email, company…"
+          style={{ ...inputStyle, width: '220px' }}
+        />
+        <select value={filterStage} onChange={e => setFilterStage(e.target.value)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
           <option value="all">All Stages</option>
           {stages.map(s => <option key={s} value={s} style={{ textTransform: 'capitalize' }}>{s.replace('_', ' ')}</option>)}
         </select>
-        <select value={filterSource} onChange={e => setFilterSource(e.target.value)}
-          style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'Inter, sans-serif' }}>
+        <select value={filterSource} onChange={e => setFilterSource(e.target.value)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
           <option value="all">All Sources</option>
-          {['manual', 'website', 'referral', 'social', 'email', 'cold_call'].map(s => <option key={s} value={s} style={{ textTransform: 'capitalize' }}>{s.replace('_', ' ')}</option>)}
+          {['manual', 'website', 'referral', 'social', 'email', 'cold_call'].map(s => (
+            <option key={s} value={s} style={{ textTransform: 'capitalize' }}>{s.replace('_', ' ')}</option>
+          ))}
         </select>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
-          <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748B' }}>Sort by:</span>
-          <select value={sortKey} onChange={e => setSortKey(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'Inter, sans-serif' }}>
+          <span style={{ fontSize: '11px', fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.7px' }}>Sort</span>
+          <select value={sortKey} onChange={e => setSortKey(e.target.value)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
             {SORT_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
           </select>
-          <button onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
-            style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', background: 'white', fontSize: '12px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>
-            {sortDir === 'asc' ? <><ChevronUp size={14} /> Asc</> : <><ChevronDown size={14} /> Desc</>}
+          <button
+            onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+            style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '7px 12px', border: '1px solid #E5E7EB', borderRadius: '5px', background: '#fff', fontSize: '12px', fontWeight: '500', color: '#374151', cursor: 'pointer' }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = '#9CA3AF'}
+            onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}
+          >
+            {sortDir === 'asc' ? <><ChevronUp size={13} /> Asc</> : <><ChevronDown size={13} /> Desc</>}
           </button>
         </div>
       </div>
 
-      {/* Table View */}
+      {/* ── Table View ── */}
       {view === 'table' && (
-        <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E2E8F0', overflow: 'auto' }}>
+        <div style={{ border: '1px solid #E5E7EB', borderRadius: '6px', overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
             <thead>
-              <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+              <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
                 {[
-                  { label: 'Lead', key: 'first_name' },
-                  { label: 'Company', key: 'company' },
-                  { label: 'Source', key: 'source' },
-                  { label: 'Stage', key: 'stage' },
-                  { label: 'Value', key: 'estimated_value' },
+                  { label: 'Lead',         key: 'first_name' },
+                  { label: 'Company',      key: 'company' },
+                  { label: 'Source',       key: 'source' },
+                  { label: 'Stage',        key: 'stage' },
+                  { label: 'Value',        key: 'estimated_value' },
                   { label: 'Next Follow-up', key: 'next_followup_at' },
-                  { label: 'Assigned', key: 'assigned_to' },
-                  { label: '', key: null },
+                  { label: 'Assigned',     key: 'assigned_to' },
+                  { label: '',             key: null },
                 ].map(({ label, key }) => (
-                  <th key={label} onClick={key ? () => handleSort(key) : undefined}
-                    style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#94A3B8', letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: key ? 'pointer' : 'default', userSelect: 'none' }}>
+                  <th
+                    key={label}
+                    onClick={key ? () => handleSort(key) : undefined}
+                    style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#9CA3AF', letterSpacing: '0.6px', textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: key ? 'pointer' : 'default', userSelect: 'none' }}
+                  >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      {label}
-                      {key && <SortIcon field={key} />}
+                      {label}{key && <SortIcon field={key} />}
                     </div>
                   </th>
                 ))}
@@ -322,93 +416,147 @@ export default function SalesCRM() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>Loading...</td></tr>
+                <tr><td colSpan={8} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>Loading…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>No leads yet. Click <strong>Add Lead</strong> to get started.</td></tr>
-              ) : filtered.map(l => (
-                <tr key={l.id} style={{ borderTop: '1px solid #F1F5F9' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'white'}>
-                  <td style={{ padding: '12px 16px' }}>
-                    <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>{l.first_name} {l.last_name}</div>
-                    <div style={{ fontSize: '11px', color: '#94A3B8' }}>{l.email}</div>
-                    {l.phone && <div style={{ fontSize: '11px', color: '#94A3B8' }}>{l.phone}</div>}
-                  </td>
-                  <td style={{ padding: '12px 16px', fontSize: '13px', color: '#475569' }}>{l.company || '—'}</td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{ ...sourceStyle(l.source), padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600', textTransform: 'capitalize' }}>{l.source?.replace('_', ' ')}</span>
-                  </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <select value={l.stage} onChange={e => updateStage(l.id, e.target.value)}
-                      style={{ ...stageStyle(l.stage), padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600', border: 'none', cursor: 'pointer', outline: 'none', textTransform: 'capitalize' }}>
-                      {stages.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-                    </select>
-                  </td>
-                  <td style={{ padding: '12px 16px', fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>{formatAmount(l.estimated_value)}</td>
-                  <td style={{ padding: '12px 16px', fontSize: '12px', color: l.next_followup_at && new Date(l.next_followup_at) < new Date() ? '#991B1B' : '#64748B', fontWeight: l.next_followup_at && new Date(l.next_followup_at) < new Date() ? '700' : '400' }}>
-                    {formatDate(l.next_followup_at)}
-                  </td>
-                  <td style={{ padding: '12px 16px', fontSize: '12px', color: '#475569' }}>{l.assigned_to || '—'}</td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <div style={{ display: 'flex', gap: '5px' }}>
-                      {!l.converted_client_id && l.stage !== 'closed_lost' && (
-                        <button onClick={() => convertToClient(l)}
-                          style={{ padding: '5px 8px', border: '1px solid #BBF7D0', borderRadius: '6px', background: '#DCFCE7', cursor: 'pointer', fontSize: '11px', fontWeight: '600', color: '#166534', whiteSpace: 'nowrap' }}>
-                          Convert
+                <tr><td colSpan={8} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>
+                  No leads yet.{' '}
+                  <span style={{ color: '#111827', fontWeight: '500', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setShowModal(true)}>
+                    Add your first lead
+                  </span>
+                </td></tr>
+              ) : filtered.map((l, idx) => {
+                const overdue = l.next_followup_at && new Date(l.next_followup_at) < new Date();
+                return (
+                  <tr
+                    key={l.id}
+                    style={{ borderBottom: idx < filtered.length - 1 ? '1px solid #F3F4F6' : 'none', background: '#fff' }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
+                    onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                  >
+                    <td style={{ padding: '14px 16px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '500', color: '#111827' }}>{l.first_name} {l.last_name}</div>
+                      {l.email && <div style={{ fontSize: '11px', color: '#9CA3AF', marginTop: '2px' }}>{l.email}</div>}
+                      {l.phone && <div style={{ fontSize: '11px', color: '#9CA3AF' }}>{l.phone}</div>}
+                    </td>
+                    <td style={{ padding: '14px 16px', color: '#374151', fontSize: '13px' }}>{l.company || '—'}</td>
+                    <td style={{ padding: '14px 16px' }}>{sourceBadge(l.source)}</td>
+                    <td style={{ padding: '14px 16px' }}>
+                      <select
+                        value={l.stage}
+                        onChange={e => updateStage(l.id, e.target.value)}
+                        style={{
+                          background: 'transparent',
+                          color: stageColors[l.stage]?.color || '#6B7280',
+                          border: `1px solid ${stageColors[l.stage]?.border || '#E5E7EB'}`,
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          outline: 'none',
+                          textTransform: 'capitalize',
+                          fontFamily: 'Inter, sans-serif',
+                        }}
+                      >
+                        {stages.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: '600', color: '#111827' }}>{formatAmount(l.estimated_value)}</td>
+                    <td style={{ padding: '14px 16px', fontSize: '12px', color: overdue ? '#DC2626' : '#6B7280', fontWeight: overdue ? '600' : '400' }}>
+                      {formatDate(l.next_followup_at)}
+                    </td>
+                    <td style={{ padding: '14px 16px', fontSize: '12px', color: '#6B7280' }}>{l.assigned_to || '—'}</td>
+                    <td style={{ padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                        {!l.converted_client_id && l.stage !== 'closed_lost' && (
+                          <button
+                            onClick={() => convertToClient(l)}
+                            style={{ padding: '4px 10px', border: '1px solid #BBF7D0', borderRadius: '4px', background: 'transparent', cursor: 'pointer', fontSize: '11px', fontWeight: '600', color: '#16A34A', whiteSpace: 'nowrap' }}
+                          >
+                            Convert
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setEditItem(l);
+                            setForm({ first_name: l.first_name, last_name: l.last_name, email: l.email || '', phone: l.phone || '', company: l.company || '', country: l.country || '', source: l.source, status: l.status, stage: l.stage, assigned_to: l.assigned_to || '', estimated_value: l.estimated_value, currency: l.currency, notes: l.notes || '', next_followup_at: l.next_followup_at ? l.next_followup_at.slice(0, 10) : '' });
+                            setShowModal(true);
+                          }}
+                          style={{ padding: '5px', border: '1px solid #E5E7EB', borderRadius: '4px', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                          onMouseEnter={e => e.currentTarget.style.borderColor = '#9CA3AF'}
+                          onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}
+                        >
+                          <Edit2 size={12} color="#6B7280" />
                         </button>
-                      )}
-                      <button onClick={() => { setEditItem(l); setForm({ first_name: l.first_name, last_name: l.last_name, email: l.email || '', phone: l.phone || '', company: l.company || '', country: l.country || '', source: l.source, status: l.status, stage: l.stage, assigned_to: l.assigned_to || '', estimated_value: l.estimated_value, currency: l.currency, notes: l.notes || '', next_followup_at: l.next_followup_at ? l.next_followup_at.slice(0, 10) : '' }); setShowModal(true); }}
-                        style={{ padding: '5px', border: '1px solid #E2E8F0', borderRadius: '6px', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                        <Edit2 size={13} color="#64748B" />
-                      </button>
-                      <button onClick={() => remove(l.id)}
-                        style={{ padding: '5px', border: '1px solid #FEE2E2', borderRadius: '6px', background: '#FFF5F5', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                        <Trash2 size={13} color="#EF4444" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        <button
+                          onClick={() => remove(l.id)}
+                          style={{ padding: '5px', border: '1px solid #FECACA', borderRadius: '4px', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                        >
+                          <Trash2 size={12} color="#DC2626" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Kanban View */}
+      {/* ── Kanban View ── */}
       {view === 'kanban' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', overflowX: 'auto' }}>
           {stages.map(stage => {
             const stageLeads = filtered.filter(l => l.stage === stage);
             const stageValue = stageLeads.reduce((s, l) => s + (parseFloat(l.estimated_value) || 0), 0);
-            const sStyle = stageStyle(stage);
+            const c = stageColors[stage];
             return (
-              <div key={stage} style={{ minWidth: '200px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                  <span style={{ ...sStyle, padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', textTransform: 'capitalize' }}>{stage.replace('_', ' ')}</span>
-                  <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '600' }}>{stageLeads.length}</span>
+              <div key={stage} style={{ minWidth: '180px' }}>
+                {/* Column header */}
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span style={{ background: 'transparent', color: c.color, border: `1px solid ${c.border}`, padding: '2px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', textTransform: 'capitalize' }}>
+                      {stage.replace('_', ' ')}
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: '600' }}>{stageLeads.length}</span>
+                  </div>
+                  {stageValue > 0 && <div style={{ fontSize: '11px', color: '#6B7280', fontWeight: '600', paddingLeft: '2px' }}>{formatAmount(stageValue)}</div>}
                 </div>
-                {stageValue > 0 && <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '8px', fontWeight: '600' }}>{formatAmount(stageValue)}</div>}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: '100px' }}>
+
+                {/* Cards */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: '80px' }}>
                   {stageLeads.map(l => (
-                    <div key={l.id} style={{ background: 'white', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A', marginBottom: '4px' }}>{l.first_name} {l.last_name}</div>
-                      {l.company && <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '4px' }}>{l.company}</div>}
-                      {l.estimated_value > 0 && <div style={{ fontSize: '12px', fontWeight: '700', color: '#6366F1' }}>{formatAmount(l.estimated_value)}</div>}
+                    <div
+                      key={l.id}
+                      style={{ background: '#fff', borderRadius: '6px', border: '1px solid #E5E7EB', padding: '12px' }}
+                      onMouseEnter={e => e.currentTarget.style.borderColor = '#9CA3AF'}
+                      onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}
+                    >
+                      <div style={{ fontSize: '13px', fontWeight: '500', color: '#111827', marginBottom: '3px' }}>{l.first_name} {l.last_name}</div>
+                      {l.company && <div style={{ fontSize: '11px', color: '#9CA3AF', marginBottom: '4px' }}>{l.company}</div>}
+                      {l.estimated_value > 0 && (
+                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>{formatAmount(l.estimated_value)}</div>
+                      )}
                       {l.next_followup_at && (
-                        <div style={{ fontSize: '10px', color: new Date(l.next_followup_at) < new Date() ? '#991B1B' : '#94A3B8', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                        <div style={{ fontSize: '10px', color: new Date(l.next_followup_at) < new Date() ? '#DC2626' : '#9CA3AF', display: 'flex', alignItems: 'center', gap: '3px', marginBottom: '8px' }}>
                           <Clock size={10} /> {formatDate(l.next_followup_at)}
                         </div>
                       )}
-                      <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
+                      <div style={{ display: 'flex', gap: '4px' }}>
                         {!l.converted_client_id && stage !== 'closed_lost' && stage !== 'closed_won' && (
-                          <button onClick={() => convertToClient(l)}
-                            style={{ flex: 1, padding: '4px', border: '1px solid #BBF7D0', borderRadius: '5px', background: '#DCFCE7', cursor: 'pointer', fontSize: '10px', fontWeight: '700', color: '#166534' }}>
+                          <button
+                            onClick={() => convertToClient(l)}
+                            style={{ flex: 1, padding: '4px', border: '1px solid #BBF7D0', borderRadius: '4px', background: 'transparent', cursor: 'pointer', fontSize: '10px', fontWeight: '600', color: '#16A34A' }}
+                          >
                             Convert
                           </button>
                         )}
-                        <button onClick={() => remove(l.id)}
-                          style={{ padding: '4px 6px', border: '1px solid #FEE2E2', borderRadius: '5px', background: '#FFF5F5', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                          <Trash2 size={10} color="#EF4444" />
+                        <button
+                          onClick={() => remove(l.id)}
+                          style={{ padding: '4px 6px', border: '1px solid #FECACA', borderRadius: '4px', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                        >
+                          <Trash2 size={10} color="#DC2626" />
                         </button>
                       </div>
                     </div>
@@ -420,43 +568,50 @@ export default function SalesCRM() {
         </div>
       )}
 
-      {/* Modal */}
+      {/* ── Add / Edit Modal ── */}
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'white', borderRadius: '14px', width: '560px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A' }}>{editItem ? 'Edit Lead' : 'Add Lead'}</div>
-              <button onClick={() => { setShowModal(false); setEditItem(null); setForm(empty); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} color="#94A3B8" /></button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: '6px', width: '560px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.15)', border: '1px solid #E5E7EB' }}>
+
+            {/* Modal header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontWeight: '700', fontSize: '15px', color: '#111827', letterSpacing: '-0.2px' }}>
+                {editItem ? 'Edit Lead' : 'Add Lead'}
+              </div>
+              <button
+                onClick={() => { setShowModal(false); setEditItem(null); setForm(empty); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 0 }}
+              >
+                <X size={16} />
+              </button>
             </div>
-            <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto' }}>
+
+            {/* Modal body */}
+            <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={labelStyle}>First Name *</label>
-                  <input value={form.first_name} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))} placeholder="John" style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Last Name *</label>
-                  <input value={form.last_name} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} placeholder="Smith" style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Email</label>
-                  <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="john@company.com" style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Phone</label>
-                  <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+357 99 123456" style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Company</label>
-                  <input value={form.company} onChange={e => setForm(f => ({ ...f, company: e.target.value }))} placeholder="Company Ltd" style={inputStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Country</label>
-                  <input value={form.country} onChange={e => setForm(f => ({ ...f, country: e.target.value }))} placeholder="Cyprus" style={inputStyle} />
-                </div>
+                {[
+                  { label: 'First Name *', key: 'first_name', placeholder: 'John' },
+                  { label: 'Last Name *',  key: 'last_name',  placeholder: 'Smith' },
+                  { label: 'Email',        key: 'email',      placeholder: 'john@company.com', type: 'email' },
+                  { label: 'Phone',        key: 'phone',      placeholder: '+357 99 123456' },
+                  { label: 'Company',      key: 'company',    placeholder: 'Company Ltd' },
+                  { label: 'Country',      key: 'country',    placeholder: 'Cyprus' },
+                ].map(({ label, key, placeholder, type }) => (
+                  <div key={key}>
+                    <label style={labelStyle}>{label}</label>
+                    <input
+                      type={type || 'text'}
+                      value={form[key]}
+                      onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                      placeholder={placeholder}
+                      style={inputStyle}
+                    />
+                  </div>
+                ))}
+
                 <div>
                   <label style={labelStyle}>Source</label>
-                  <select value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))} style={inputStyle}>
+                  <select value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))} style={{ ...inputStyle, cursor: 'pointer' }}>
                     <option value="manual">Manual</option>
                     <option value="website">Website</option>
                     <option value="referral">Referral</option>
@@ -467,7 +622,7 @@ export default function SalesCRM() {
                 </div>
                 <div>
                   <label style={labelStyle}>Stage</label>
-                  <select value={form.stage} onChange={e => setForm(f => ({ ...f, stage: e.target.value }))} style={inputStyle}>
+                  <select value={form.stage} onChange={e => setForm(f => ({ ...f, stage: e.target.value }))} style={{ ...inputStyle, cursor: 'pointer' }}>
                     {stages.map(s => <option key={s} value={s} style={{ textTransform: 'capitalize' }}>{s.replace('_', ' ')}</option>)}
                   </select>
                 </div>
@@ -485,14 +640,42 @@ export default function SalesCRM() {
                 </div>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={labelStyle}>Notes</label>
-                  <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes about this lead..." rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
+                  <textarea
+                    value={form.notes}
+                    onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="Notes about this lead…"
+                    rows={3}
+                    style={{ ...inputStyle, resize: 'vertical' }}
+                  />
                 </div>
               </div>
             </div>
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #E2E8F0', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button onClick={() => { setShowModal(false); setEditItem(null); setForm(empty); }} style={{ padding: '9px 20px', border: '1px solid #E2E8F0', borderRadius: '8px', background: 'white', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>Cancel</button>
-              <button onClick={save} disabled={!form.first_name || !form.last_name}
-                style={{ padding: '9px 20px', background: !form.first_name || !form.last_name ? '#E2E8F0' : 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: !form.first_name || !form.last_name ? '#94A3B8' : 'white', cursor: !form.first_name || !form.last_name ? 'not-allowed' : 'pointer' }}>
+
+            {/* Modal footer */}
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { setShowModal(false); setEditItem(null); setForm(empty); }}
+                style={{ padding: '8px 18px', border: '1px solid #E5E7EB', borderRadius: '5px', background: '#fff', fontSize: '13px', fontWeight: '500', color: '#374151', cursor: 'pointer' }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = '#9CA3AF'}
+                onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={save}
+                disabled={!form.first_name || !form.last_name}
+                style={{
+                  padding: '8px 20px',
+                  background: !form.first_name || !form.last_name ? '#F3F4F6' : '#111827',
+                  border: '1px solid transparent',
+                  borderRadius: '5px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  color: !form.first_name || !form.last_name ? '#9CA3AF' : '#fff',
+                  cursor: !form.first_name || !form.last_name ? 'not-allowed' : 'pointer',
+                  letterSpacing: '0.1px',
+                }}
+              >
                 {editItem ? 'Save Changes' : 'Add Lead'}
               </button>
             </div>
