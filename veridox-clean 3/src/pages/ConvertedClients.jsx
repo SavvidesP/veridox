@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { Copy, Check, Eye, EyeOff } from 'lucide-react';
 
 const sourceBadge = (s) => {
   const map = {
@@ -49,17 +50,64 @@ const sectionLabel = (text) => (
   <div style={{ fontSize: '11px', fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>{text}</div>
 );
 
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false);
+  const copy = (e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button onClick={copy} style={{ padding: '2px 7px', border: '1px solid #E5E7EB', borderRadius: '4px', background: 'transparent', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: '#6B7280', flexShrink: 0 }}>
+      {copied ? <Check size={10} color="#16A34A" /> : <Copy size={10} />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
+
+function CredentialsCell({ email, password }) {
+  const [show, setShow] = useState(false);
+  if (!email) return <span style={{ color: '#D1D5DB', fontSize: '11px' }}>—</span>;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }} onClick={e => e.stopPropagation()}>
+      {/* Status badge */}
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16A34A', flexShrink: 0 }} />
+        <span style={{ fontSize: '10px', color: '#16A34A', fontWeight: '600' }}>TradeScope Active</span>
+      </div>
+      {/* Email row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <span style={{ fontSize: '11px', color: '#374151', fontFamily: 'monospace' }}>{email}</span>
+        <CopyButton text={email} />
+      </div>
+      {/* Password row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <span style={{ fontSize: '11px', color: '#374151', fontFamily: 'monospace', letterSpacing: show ? '0.5px' : '2px' }}>
+          {show ? password : '••••••••••••'}
+        </span>
+        <button onClick={e => { e.stopPropagation(); setShow(v => !v); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', display: 'flex', alignItems: 'center', color: '#9CA3AF' }}>
+          {show ? <EyeOff size={11} /> : <Eye size={11} />}
+        </button>
+        {show && <CopyButton text={password} />}
+      </div>
+      {/* Copy all */}
+      <CopyButton text={`TradeScope Login\nURL: https://tradescope.net\nEmail: ${email}\nPassword: ${password}`} />
+    </div>
+  );
+}
+
 export default function ConvertedClients() {
   const navigate = useNavigate();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [selectedClient, setSelectedClient] = useState(null);
 
   useEffect(() => { fetchConverted(); }, []);
 
   async function fetchConverted() {
     setLoading(true);
-    // Get all leads that have been converted
     const { data: leads } = await supabase
       .from('sales_leads')
       .select('*')
@@ -69,21 +117,20 @@ export default function ConvertedClients() {
     if (!leads?.length) { setClients([]); setLoading(false); return; }
 
     const ids = leads.map(l => l.converted_client_id);
-    const { data: cliData } = await supabase
-      .from('clients')
-      .select('*')
-      .in('id', ids);
+    const { data: cliData } = await supabase.from('clients').select('*').in('id', ids);
 
-    // Enrich clients with lead metadata
     const enriched = (cliData || []).map(c => {
       const lead = leads.find(l => l.converted_client_id === c.id);
       return {
         ...c,
-        lead_source:     lead?.source,
-        assigned_to:     lead?.assigned_to,
-        estimated_value: lead?.estimated_value,
-        converted_at:    lead?.updated_at,
-        lead_notes:      lead?.notes,
+        lead_source:          lead?.source,
+        assigned_to:          lead?.assigned_to,
+        estimated_value:      lead?.estimated_value,
+        converted_at:         lead?.updated_at,
+        lead_notes:           lead?.notes,
+        tradescope_email:     lead?.tradescope_email,
+        tradescope_password:  lead?.tradescope_password,
+        tradescope_trader_id: lead?.tradescope_trader_id,
       };
     }).sort((a, b) => new Date(b.converted_at) - new Date(a.converted_at));
 
@@ -103,11 +150,12 @@ export default function ConvertedClients() {
   });
 
   const totalValue = clients.reduce((s, c) => s + (parseFloat(c.estimated_value) || 0), 0);
+  const withTradeScope = clients.filter(c => c.tradescope_email).length;
 
   return (
-    <div style={{ padding: '40px 44px', fontFamily: "'Inter', sans-serif", background: '#fff', minHeight: '100vh', maxWidth: '1280px' }}>
+    <div style={{ padding: '40px 44px', fontFamily: "'Inter', sans-serif", background: '#fff', minHeight: '100vh', maxWidth: '1400px' }}>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '36px' }}>
         <div>
           <h1 style={{ color: '#111827', fontSize: '26px', fontWeight: '700', margin: 0, letterSpacing: '-0.5px' }}>Converted Clients</h1>
@@ -115,13 +163,14 @@ export default function ConvertedClients() {
         </div>
       </div>
 
-      {/* ── Stats ── */}
+      {/* Stats */}
       {sectionLabel('Overview')}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '32px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '32px' }}>
         {[
           { label: 'Total Converted', value: loading ? '—' : clients.length },
           { label: 'Total Value',     value: loading ? '—' : formatAmount(totalValue) },
-          { label: 'This Month',      value: loading ? '—' : clients.filter(c => {
+          { label: 'TradeScope Accounts', value: loading ? '—' : withTradeScope },
+          { label: 'This Month', value: loading ? '—' : clients.filter(c => {
               if (!c.converted_at) return false;
               const d = new Date(c.converted_at);
               const now = new Date();
@@ -137,7 +186,7 @@ export default function ConvertedClients() {
 
       <div style={{ borderTop: '1px solid #F3F4F6', margin: '28px 0' }} />
 
-      {/* ── Search ── */}
+      {/* Search */}
       {sectionLabel('Clients')}
       <div style={{ marginBottom: '16px' }}>
         <input
@@ -148,21 +197,21 @@ export default function ConvertedClients() {
         />
       </div>
 
-      {/* ── Table ── */}
+      {/* Table */}
       <div style={{ border: '1px solid #E5E7EB', borderRadius: '6px', overflow: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-              {['Client', 'Company', 'Email', 'Country', 'Source', 'Value', 'KYC Status', 'Assigned To', 'Converted'].map(h => (
+              {['Client', 'Company', 'Email', 'Country', 'Source', 'Value', 'KYC', 'TradeScope Credentials', 'Assigned To', 'Converted'].map(h => (
                 <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#9CA3AF', letterSpacing: '0.6px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>Loading…</td></tr>
+              <tr><td colSpan={10} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>Loading…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>
+              <tr><td colSpan={10} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>
                 {search ? 'No results found.' : 'No converted clients yet. Convert a lead from Sales CRM to get started.'}
               </td></tr>
             ) : filtered.map((c, idx) => (
@@ -190,6 +239,9 @@ export default function ConvertedClients() {
                 <td style={{ padding: '14px 16px' }}>{sourceBadge(c.lead_source)}</td>
                 <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: '600', color: '#111827' }}>{formatAmount(c.estimated_value)}</td>
                 <td style={{ padding: '14px 16px' }}>{kycBadge(c.status)}</td>
+                <td style={{ padding: '14px 16px', minWidth: '200px' }}>
+                  <CredentialsCell email={c.tradescope_email} password={c.tradescope_password} />
+                </td>
                 <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '12px' }}>{c.assigned_to || '—'}</td>
                 <td style={{ padding: '14px 16px', color: '#9CA3AF', fontSize: '12px', whiteSpace: 'nowrap' }}>{formatDate(c.converted_at)}</td>
               </tr>
