@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import * as XLSX from 'xlsx';
+
 
 export default function TradingAccounts() {
   const [accounts, setAccounts] = useState([]);
@@ -26,28 +26,25 @@ export default function TradingAccounts() {
     setLoading(false);
   }
 
-  function exportXLSX() {
+  function exportCSV() {
+    const headers = ['Email','Name','Balance','Equity','Leverage','Open Trades','Closed Trades','Total P&L','Created'];
     const rows = accounts.map(a => {
       const accountTrades = trades.filter(t => t.trader_id === a.id);
       const openTrades = accountTrades.filter(t => t.status === 'open');
       const closedTrades = accountTrades.filter(t => t.status === 'closed');
       const totalPnL = closedTrades.reduce((s, t) => s + (t.profit || 0), 0);
-      return {
-        'Email': a.email,
-        'Name': a.name || '—',
-        'Balance': a.balance?.toFixed(2),
-        'Equity': a.equity?.toFixed(2),
-        'Leverage': `1:${a.leverage || 100}`,
-        'Open Trades': openTrades.length,
-        'Closed Trades': closedTrades.length,
-        'Total P&L': totalPnL.toFixed(2),
-        'Created': a.created_at ? new Date(a.created_at).toLocaleDateString() : '—',
-      };
+      return [
+        a.email, a.name||'', (a.balance||0).toFixed(2), (a.equity||0).toFixed(2),
+        `1:${a.leverage||100}`, openTrades.length, closedTrades.length,
+        totalPnL.toFixed(2), a.created_at?new Date(a.created_at).toLocaleDateString():'',
+      ];
     });
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Trading Accounts');
-    XLSX.writeFile(wb, 'trading_accounts.xlsx');
+    const csv=[headers,...rows].map(r=>r.join(',')).join('\n');
+    const blob=new Blob([csv],{type:'text/csv'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='trading_accounts.csv';a.click();
+    URL.revokeObjectURL(url);
   }
 
   const C = {
@@ -71,13 +68,13 @@ export default function TradingAccounts() {
           <p style={{ fontSize: '13px', color: C.muted, margin: '4px 0 0' }}>{accounts.length} trader accounts</p>
         </div>
         <button
-          onClick={exportXLSX}
+          onClick={exportCSV}
           style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: C.accent, border: 'none', borderRadius: '8px', color: 'white', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
-          Export .xlsx
+          Export .csv
         </button>
       </div>
 
