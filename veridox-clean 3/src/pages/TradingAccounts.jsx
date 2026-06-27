@@ -303,8 +303,9 @@ export default function Platform() {
       if(symbolDropdownRef.current&&!symbolDropdownRef.current.contains(e.target)) setShowSymbols(false);
       if(intervalDropdownRef.current&&!intervalDropdownRef.current.contains(e.target)) setShowIntervals(false);
     };
-    document.addEventListener('mousedown',handler);
-    return()=>document.removeEventListener('mousedown',handler);
+    // Use capture phase so clicks on canvas (pointerEvents:none) still trigger
+    document.addEventListener('mousedown',handler,true);
+    return()=>document.removeEventListener('mousedown',handler,true);
   },[]);
 
   // ── Fetch daily open prices for watchlist % change ──
