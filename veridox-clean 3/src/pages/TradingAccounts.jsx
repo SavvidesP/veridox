@@ -1,626 +1,1172 @@
-import { useEffect, useState } from 'react';
-import { Plus, Trash2, Edit2, X, TrendingUp, TrendingDown, DollarSign, Activity, ChevronDown, ChevronUp, ExternalLink, RefreshCw, Download } from 'lucide-react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { createChart } from 'lightweight-charts';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { LogOut, TrendingUp, X, ChevronDown, Search, BarChart2, Plus } from 'lucide-react';
 
-const TS_URL = 'https://atqucerzdqzchdgylmfo.supabase.co';
-const TS_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF0cXVjZXJ6ZHF6Y2hkZ3lsbWZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MjM5MzMyNiwiZXhwIjoyMDk3OTY5MzI2fQ.JAdc5f9FRkMcamUcwDbp1phY16WYiJSpGrmZgCHkpUc';
+const POLYGON_KEY = 'k7VULVk63WhJApEdYJ3A0omYmbHauwPi';
+const TWELVE_KEY  = '05ee6ae8c5ca41c0a9556a99c91debf9';
 
-async function tsGet(path) {
-  const res = await fetch(`${TS_URL}/rest/v1/${path}`, {
-    headers: { apikey: TS_KEY, Authorization: `Bearer ${TS_KEY}`, 'Content-Type': 'application/json' },
-  });
-  return res.json();
-}
-async function tsPatch(path, body) {
-  const res = await fetch(`${TS_URL}/rest/v1/${path}`, {
-    method: 'PATCH',
-    headers: { apikey: TS_KEY, Authorization: `Bearer ${TS_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-    body: JSON.stringify(body),
-  });
-  return res.json();
-}
+const C = {
+  bg:'#131722',panel:'#1e222d',panel2:'#2a2e39',border:'#2a2e39',border2:'#363a45',
+  text:'#d1d4dc',muted:'#787b86',muted2:'#4a4e5a',accent:'#2962ff',
+  green:'#26a69a',red:'#ef5350',
+  greenBg:'rgba(38,166,154,0.15)',redBg:'rgba(239,83,80,0.15)',accentBg:'rgba(41,98,255,0.15)',
+};
 
-function fmt(n, d = 2) { return n != null ? Number(n).toFixed(d) : '0.00'; }
-function fmtP(n) { const v = Number(n || 0); return (v >= 0 ? '+' : '') + '$' + Math.abs(v).toFixed(2); }
+const SYMBOL_META = {
+  'EUR/USD':{ bg:'#1a6dd4',short:'€', wsUrl:'wss://socket.polygon.io/forex',  channel:'CA.EURUSD',  ev:'CA',  pair:'EURUSD',  polyTicker:'C:EURUSD',  polyType:'forex'  },
+  'GBP/USD':{ bg:'#7b4ea0',short:'£', wsUrl:'wss://socket.polygon.io/forex',  channel:'CA.GBPUSD',  ev:'CA',  pair:'GBPUSD',  polyTicker:'C:GBPUSD',  polyType:'forex'  },
+  'USD/JPY':{ bg:'#c0392b',short:'¥', wsUrl:'wss://socket.polygon.io/forex',  channel:'CA.USDJPY',  ev:'CA',  pair:'USDJPY',  polyTicker:'C:USDJPY',  polyType:'forex'  },
+  'XAU/USD':{ bg:'#d4a017',short:'AU',wsUrl:'wss://socket.polygon.io/forex',  channel:'CA.XAUUSD',  ev:'CA',  pair:'XAUUSD',  polyTicker:'C:XAUUSD',  polyType:'forex'  },
+  'BTC/USD':{ bg:'#f7931a',short:'₿', wsUrl:'wss://socket.polygon.io/crypto', channel:'XAS.BTC-USD',ev:'XAS', pair:'BTC-USD', polyTicker:'X:BTCUSD',  polyType:'crypto' },
+  'ETH/USD':{ bg:'#627eea',short:'Ξ', wsUrl:'wss://socket.polygon.io/crypto', channel:'XAS.ETH-USD',ev:'XAS', pair:'ETH-USD', polyTicker:'X:ETHUSD',  polyType:'crypto' },
+  'AAPL':   { bg:'#555555',short:'',  wsUrl:'wss://socket.polygon.io/stocks', channel:'A.AAPL',     ev:'A',   pair:'AAPL',    polyTicker:null,         polyType:'stocks' },
+  'TSLA':   { bg:'#e31937',short:'T', wsUrl:'wss://socket.polygon.io/stocks', channel:'A.TSLA',     ev:'A',   pair:'TSLA',    polyTicker:null,         polyType:'stocks' },
+  'NVDA':   { bg:'#76b900',short:'N', wsUrl:'wss://socket.polygon.io/stocks', channel:'A.NVDA',     ev:'A',   pair:'NVDA',    polyTicker:null,         polyType:'stocks' },
+  'MSFT':   { bg:'#00a4ef',short:'M', wsUrl:'wss://socket.polygon.io/stocks', channel:'A.MSFT',     ev:'A',   pair:'MSFT',    polyTicker:null,         polyType:'stocks' },
+  'SPY':    { bg:'#e31837',short:'S', wsUrl:'wss://socket.polygon.io/stocks', channel:'A.SPY',      ev:'A',   pair:'SPY',     polyTicker:null,         polyType:'stocks' },
+  'QQQ':    { bg:'#0068ff',short:'Q', wsUrl:'wss://socket.polygon.io/stocks', channel:'A.QQQ',      ev:'A',   pair:'QQQ',     polyTicker:null,         polyType:'stocks' },
+};
 
-const statusStyle = (s) => ({
-  active:    { background: '#DCFCE7', color: '#166534' },
-  inactive:  { background: '#FEE2E2', color: '#991B1B' },
-  suspended: { background: '#FEF9C3', color: '#854D0E' },
-}[s] || { background: '#F1F5F9', color: '#475569' });
-
-function formatAmount(v) {
-  if (v == null) return '-';
-  return Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-// ── TradeScope Trader Row ──
-function TraderRow({ trader, onRefresh }) {
-  const [expanded, setExpanded] = useState(false);
-  const [positions, setPositions] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [loadingData, setLoadingData] = useState(false);
-  const [balanceModal, setBalanceModal] = useState(false);
-  const [leverageModal, setLeverageModal] = useState(false);
-  const [balanceAmount, setBalanceAmount] = useState('');
-  const [balanceType, setBalanceType] = useState('add');
-  const [newLeverage, setNewLeverage] = useState(trader.leverage || 100);
-  const [saving, setSaving] = useState(false);
-
-  async function loadData() {
-    setLoadingData(true);
-    const [pos, hist] = await Promise.all([
-      tsGet(`trades?trader_id=eq.${trader.id}&status=eq.open&order=opened_at.desc`),
-      tsGet(`trades?trader_id=eq.${trader.id}&status=eq.closed&order=closed_at.desc&limit=20`),
-    ]);
-    setPositions(Array.isArray(pos) ? pos : []);
-    setHistory(Array.isArray(hist) ? hist : []);
-    setLoadingData(false);
-  }
-
-  function toggle() {
-    if (!expanded) loadData();
-    setExpanded(v => !v);
-  }
-
-  async function closePosition(tradeId) {
-    if (!window.confirm('Close this position?')) return;
-    await tsPatch(`trades?id=eq.${tradeId}`, { status: 'closed', closed_at: new Date().toISOString(), profit: 0 });
-    loadData(); onRefresh();
-  }
-
-  async function adjustBalance() {
-    const amt = parseFloat(balanceAmount);
-    if (!amt || amt <= 0) return;
-    setSaving(true);
-    const delta = balanceType === 'add' ? amt : -amt;
-    const newBalance = Math.max(0, trader.balance + delta);
-    await tsPatch(`trader_accounts?id=eq.${trader.id}`, { balance: newBalance, equity: newBalance, free_margin: newBalance });
-    setBalanceModal(false); setBalanceAmount(''); setSaving(false); onRefresh();
-  }
-
-  async function updateLeverage() {
-    setSaving(true);
-    await tsPatch(`trader_accounts?id=eq.${trader.id}`, { leverage: parseInt(newLeverage) });
-    setLeverageModal(false); setSaving(false); onRefresh();
-  }
-
-  const livePnL = trader.equity - trader.balance;
-
-  return (
-    <>
-      <tr onClick={toggle} style={{ borderTop: '1px solid #F1F5F9', cursor: 'pointer', background: expanded ? '#F8FAFF' : 'white' }}
-        onMouseEnter={e => { if (!expanded) e.currentTarget.style.background = '#F8FAFC'; }}
-        onMouseLeave={e => { if (!expanded) e.currentTarget.style.background = 'white'; }}>
-        <td style={{ padding: '12px 8px 12px 16px', width: '20px' }}>
-          {expanded ? <ChevronUp size={14} color="#6366F1" /> : <ChevronDown size={14} color="#94A3B8" />}
-        </td>
-        <td style={{ padding: '12px 8px' }}>
-          <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{trader.email}</div>
-          <div style={{ fontSize: '10px', color: '#94A3B8', fontFamily: 'monospace', marginTop: '1px' }}>{trader.id?.slice(0, 8)}…</div>
-        </td>
-        <td style={{ padding: '12px 8px', textAlign: 'right' }}><span style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>${fmt(trader.balance)}</span></td>
-        <td style={{ padding: '12px 8px', textAlign: 'right' }}><span style={{ fontSize: '13px', color: '#0F172A' }}>${fmt(trader.equity)}</span></td>
-        <td style={{ padding: '12px 8px', textAlign: 'right' }}><span style={{ fontSize: '13px', color: '#475569' }}>${fmt(trader.margin)}</span></td>
-        <td style={{ padding: '12px 8px', textAlign: 'right' }}><span style={{ fontSize: '13px', color: '#475569' }}>${fmt(trader.free_margin)}</span></td>
-        <td style={{ padding: '12px 8px', textAlign: 'right' }}>
-          <span style={{ fontSize: '13px', fontWeight: '700', color: livePnL >= 0 ? '#16A34A' : '#DC2626' }}>{fmtP(livePnL)}</span>
-        </td>
-        <td style={{ padding: '12px 8px', textAlign: 'center' }}><span style={{ fontSize: '12px', color: '#475569' }}>1:{trader.leverage}</span></td>
-        <td style={{ padding: '12px 8px', textAlign: 'center' }}>
-          <span style={{ fontSize: '11px', background: '#EEF2FF', color: '#4338CA', padding: '2px 7px', borderRadius: '5px', fontWeight: '600' }}>{trader.currency || 'USD'}</span>
-        </td>
-        <td style={{ padding: '12px 16px 12px 8px' }} onClick={e => e.stopPropagation()}>
-          <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-            <button onClick={() => setBalanceModal(true)} title="Adjust Balance"
-              style={{ padding: '4px 8px', border: '1px solid #BBF7D0', borderRadius: '5px', background: 'transparent', cursor: 'pointer', fontSize: '11px', fontWeight: '600', color: '#16A34A', whiteSpace: 'nowrap' }}>
-              + / −
-            </button>
-            <button onClick={() => { setNewLeverage(trader.leverage || 100); setLeverageModal(true); }} title="Change Leverage"
-              style={{ padding: '4px 8px', border: '1px solid #BFDBFE', borderRadius: '5px', background: 'transparent', cursor: 'pointer', fontSize: '11px', fontWeight: '600', color: '#2563EB', whiteSpace: 'nowrap' }}>
-              Leverage
-            </button>
-            <a href="https://tradescope.net" target="_blank" rel="noreferrer" title="Open TradeScope"
-              style={{ padding: '4px 7px', border: '1px solid #E2E8F0', borderRadius: '5px', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
-              <ExternalLink size={12} color="#6366F1" />
-            </a>
-          </div>
-        </td>
-      </tr>
-
-      {expanded && (
-        <tr>
-          <td colSpan={10} style={{ padding: 0, background: '#F8FAFF', borderTop: '1px solid #E8EDFF', borderBottom: '1px solid #E8EDFF' }}>
-            <div style={{ padding: '16px 24px 20px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', marginBottom: '20px' }}>
-                {[
-                  { label: 'Balance',     value: `$${fmt(trader.balance)}`,     color: '#0F172A' },
-                  { label: 'Equity',      value: `$${fmt(trader.equity)}`,      color: '#0F172A' },
-                  { label: 'Margin',      value: `$${fmt(trader.margin)}`,      color: '#475569' },
-                  { label: 'Free Margin', value: `$${fmt(trader.free_margin)}`, color: '#475569' },
-                  { label: 'Open P&L',   value: fmtP(livePnL),                 color: livePnL >= 0 ? '#16A34A' : '#DC2626' },
-                ].map(({ label, value, color }) => (
-                  <div key={label} style={{ background: 'white', borderRadius: '8px', border: '1px solid #E8EDFF', padding: '12px 14px' }}>
-                    <div style={{ fontSize: '10px', fontWeight: '600', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>{label}</div>
-                    <div style={{ fontSize: '18px', fontWeight: '700', color, fontFamily: 'monospace' }}>{value}</div>
-                  </div>
-                ))}
-              </div>
-              {loadingData ? (
-                <div style={{ textAlign: 'center', padding: '24px', color: '#94A3B8', fontSize: '13px' }}>Loading positions…</div>
-              ) : (
-                <>
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '8px' }}>Open Positions ({positions.length})</div>
-                    {positions.length === 0 ? (
-                      <div style={{ fontSize: '12px', color: '#94A3B8', padding: '10px 0' }}>No open positions</div>
-                    ) : (
-                      <div style={{ background: 'white', borderRadius: '8px', border: '1px solid #E8EDFF', overflow: 'hidden' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                          <thead><tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E8EDFF' }}>
-                            {['Symbol','Type','Lots','Open Price','Current','P&L','SL','TP',''].map(h => (
-                              <th key={h} style={{ padding: '6px 12px', textAlign: 'left', fontSize: '10px', fontWeight: '600', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
-                            ))}
-                          </tr></thead>
-                          <tbody>
-                            {positions.map(p => (
-                              <tr key={p.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                                <td style={{ padding: '8px 12px', fontWeight: '700', color: '#0F172A' }}>{p.symbol}</td>
-                                <td style={{ padding: '8px 12px' }}><span style={{ color: p.type === 'buy' ? '#16A34A' : '#DC2626', fontWeight: '700', textTransform: 'uppercase', fontSize: '10px', background: p.type === 'buy' ? '#DCFCE7' : '#FEE2E2', padding: '2px 6px', borderRadius: '4px' }}>{p.type}</span></td>
-                                <td style={{ padding: '8px 12px', color: '#475569' }}>{p.lot_size}</td>
-                                <td style={{ padding: '8px 12px', color: '#475569', fontFamily: 'monospace' }}>{Number(p.open_price).toFixed(5)}</td>
-                                <td style={{ padding: '8px 12px', color: '#0F172A', fontFamily: 'monospace' }}>—</td>
-                                <td style={{ padding: '8px 12px', fontWeight: '700', color: (p.profit || 0) >= 0 ? '#16A34A' : '#DC2626' }}>{fmtP(p.profit || 0)}</td>
-                                <td style={{ padding: '8px 12px', color: '#94A3B8', fontFamily: 'monospace', fontSize: '11px' }}>{p.stop_loss ? Number(p.stop_loss).toFixed(5) : '—'}</td>
-                                <td style={{ padding: '8px 12px', color: '#94A3B8', fontFamily: 'monospace', fontSize: '11px' }}>{p.take_profit ? Number(p.take_profit).toFixed(5) : '—'}</td>
-                                <td style={{ padding: '8px 12px' }}><button onClick={() => closePosition(p.id)} style={{ padding: '3px 8px', border: '1px solid #FECACA', borderRadius: '4px', background: '#FFF5F5', cursor: 'pointer', fontSize: '10px', fontWeight: '600', color: '#DC2626' }}>Close</button></td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '8px' }}>Trade History ({history.length})</div>
-                    {history.length === 0 ? (
-                      <div style={{ fontSize: '12px', color: '#94A3B8', padding: '10px 0' }}>No trade history</div>
-                    ) : (
-                      <div style={{ background: 'white', borderRadius: '8px', border: '1px solid #E8EDFF', overflow: 'hidden' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                          <thead><tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E8EDFF' }}>
-                            {['Symbol','Type','Lots','Open','Close','P&L','Closed At'].map(h => (
-                              <th key={h} style={{ padding: '6px 12px', textAlign: 'left', fontSize: '10px', fontWeight: '600', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
-                            ))}
-                          </tr></thead>
-                          <tbody>
-                            {history.map(p => (
-                              <tr key={p.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                                <td style={{ padding: '7px 12px', fontWeight: '700', color: '#0F172A' }}>{p.symbol}</td>
-                                <td style={{ padding: '7px 12px' }}><span style={{ color: p.type === 'buy' ? '#16A34A' : '#DC2626', fontWeight: '700', textTransform: 'uppercase', fontSize: '10px', background: p.type === 'buy' ? '#DCFCE7' : '#FEE2E2', padding: '2px 6px', borderRadius: '4px' }}>{p.type}</span></td>
-                                <td style={{ padding: '7px 12px', color: '#475569' }}>{p.lot_size}</td>
-                                <td style={{ padding: '7px 12px', color: '#475569', fontFamily: 'monospace' }}>{Number(p.open_price).toFixed(5)}</td>
-                                <td style={{ padding: '7px 12px', color: '#475569', fontFamily: 'monospace' }}>{p.close_price ? Number(p.close_price).toFixed(5) : '—'}</td>
-                                <td style={{ padding: '7px 12px', fontWeight: '700', color: (p.profit || 0) >= 0 ? '#16A34A' : '#DC2626' }}>{fmtP(p.profit || 0)}</td>
-                                <td style={{ padding: '7px 12px', color: '#94A3B8', fontSize: '11px' }}>{p.closed_at ? new Date(p.closed_at).toLocaleString() : '—'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </td>
-        </tr>
-      )}
-
-      {balanceModal && (
-        <tr><td colSpan={10} style={{ padding: 0 }}>
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ background: 'white', borderRadius: '12px', width: '380px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
-              <div style={{ padding: '18px 22px', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A' }}>Adjust Balance</div>
-                <button onClick={() => setBalanceModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={16} color="#94A3B8" /></button>
-              </div>
-              <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{ background: '#F8FAFC', borderRadius: '8px', padding: '10px 14px' }}>
-                  <div style={{ fontSize: '11px', color: '#94A3B8', marginBottom: '2px' }}>Current Balance</div>
-                  <div style={{ fontSize: '20px', fontWeight: '700', color: '#0F172A', fontFamily: 'monospace' }}>${fmt(trader.balance)}</div>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '6px' }}>Action</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    {['add','remove'].map(t => (
-                      <button key={t} onClick={() => setBalanceType(t)} style={{ flex: 1, padding: '8px', border: `1px solid ${balanceType === t ? (t === 'add' ? '#BBF7D0' : '#FECACA') : '#E2E8F0'}`, borderRadius: '7px', background: balanceType === t ? (t === 'add' ? '#DCFCE7' : '#FEE2E2') : 'white', cursor: 'pointer', fontSize: '12px', fontWeight: '700', color: balanceType === t ? (t === 'add' ? '#16A34A' : '#DC2626') : '#475569', textTransform: 'capitalize' }}>
-                        {t === 'add' ? '+ Add' : '− Remove'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '6px' }}>Amount (USD)</label>
-                  <input type="number" value={balanceAmount} onChange={e => setBalanceAmount(e.target.value)} placeholder="0.00" min="0"
-                    style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '15px', fontWeight: '600', fontFamily: 'monospace', outline: 'none' }} />
-                </div>
-                {balanceAmount && (
-                  <div style={{ background: '#F8FAFC', borderRadius: '7px', padding: '8px 12px', fontSize: '12px', color: '#475569' }}>
-                    New balance: <strong style={{ color: '#0F172A', fontFamily: 'monospace' }}>${fmt(Math.max(0, trader.balance + (balanceType === 'add' ? 1 : -1) * (parseFloat(balanceAmount) || 0)))}</strong>
-                  </div>
-                )}
-              </div>
-              <div style={{ padding: '14px 22px', borderTop: '1px solid #E2E8F0', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                <button onClick={() => setBalanceModal(false)} style={{ padding: '8px 16px', border: '1px solid #E2E8F0', borderRadius: '7px', background: 'white', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>Cancel</button>
-                <button onClick={adjustBalance} disabled={saving || !balanceAmount}
-                  style={{ padding: '8px 20px', background: saving || !balanceAmount ? '#E2E8F0' : 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '7px', fontSize: '13px', fontWeight: '600', color: saving || !balanceAmount ? '#94A3B8' : 'white', cursor: saving || !balanceAmount ? 'not-allowed' : 'pointer' }}>
-                  {saving ? 'Saving…' : 'Confirm'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </td></tr>
-      )}
-
-      {leverageModal && (
-        <tr><td colSpan={10} style={{ padding: 0 }}>
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ background: 'white', borderRadius: '12px', width: '340px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
-              <div style={{ padding: '18px 22px', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A' }}>Change Leverage</div>
-                <button onClick={() => setLeverageModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={16} color="#94A3B8" /></button>
-              </div>
-              <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{ background: '#F8FAFC', borderRadius: '8px', padding: '10px 14px' }}>
-                  <div style={{ fontSize: '11px', color: '#94A3B8', marginBottom: '2px' }}>Current Leverage</div>
-                  <div style={{ fontSize: '20px', fontWeight: '700', color: '#0F172A' }}>1:{trader.leverage}</div>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '6px' }}>New Leverage</label>
-                  <select value={newLeverage} onChange={e => setNewLeverage(e.target.value)}
-                    style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '14px', fontWeight: '600', outline: 'none', fontFamily: 'Inter, sans-serif' }}>
-                    {[1,2,5,10,25,50,100,200,300,400,500].map(l => <option key={l} value={l}>1:{l}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div style={{ padding: '14px 22px', borderTop: '1px solid #E2E8F0', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                <button onClick={() => setLeverageModal(false)} style={{ padding: '8px 16px', border: '1px solid #E2E8F0', borderRadius: '7px', background: 'white', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>Cancel</button>
-                <button onClick={updateLeverage} disabled={saving}
-                  style={{ padding: '8px 20px', background: saving ? '#E2E8F0' : 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '7px', fontSize: '13px', fontWeight: '600', color: saving ? '#94A3B8' : 'white', cursor: saving ? 'not-allowed' : 'pointer' }}>
-                  {saving ? 'Saving…' : 'Update'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </td></tr>
-      )}
-    </>
-  );
-}
-
-// ── Main Component ──
-export default function TradingAccounts() {
-  const [accounts, setAccounts] = useState([]);
-  const [clients, setClients] = useState([]);
-  const [traders, setTraders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [tsLoading, setTsLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterPlatform, setFilterPlatform] = useState('all');
-  const [search, setSearch] = useState('');
-  const [tsSearch, setTsSearch] = useState('');
-  const [activeTab, setActiveTab] = useState('tradescope');
-
-  const empty = {
-    client_id: '', account_number: '', platform: 'MT4', account_type: 'standard',
-    currency: 'USD', balance: '', equity: '', margin: '', free_margin: '',
-    margin_level: '', leverage: 100, status: 'active',
+// Convert our interval to Polygon multiplier/timespan
+function toPolygonInterval(interval) {
+  const map = {
+    '1min':   { multiplier:1,  timespan:'minute' },
+    '5min':   { multiplier:5,  timespan:'minute' },
+    '15min':  { multiplier:15, timespan:'minute' },
+    '1h':     { multiplier:1,  timespan:'hour'   },
+    '4h':     { multiplier:4,  timespan:'hour'   },
+    '1day':   { multiplier:1,  timespan:'day'    },
+    '1week':  { multiplier:1,  timespan:'week'   },
+    '1month': { multiplier:1,  timespan:'month'  },
+    '3month': { multiplier:3,  timespan:'month'  },
+    '6month': { multiplier:6,  timespan:'month'  },
+    '1year':  { multiplier:1,  timespan:'year'   },
   };
-  const [form, setForm] = useState(empty);
+  return map[interval] || { multiplier:5, timespan:'minute' };
+}
 
-  useEffect(() => { fetchAll(); fetchTraders(); }, []);
+// How many days back to fetch based on interval
+function daysBack(interval) {
+  const map = {
+    '1min':'2', '5min':'7', '15min':'14', '1h':'60',
+    '4h':'120', '1day':'365', '1week':'730',
+    '1month':'1825', '3month':'1825', '6month':'3650', '1year':'3650',
+  };
+  return map[interval] || '7';
+}
 
-  async function fetchAll() {
-    setLoading(true);
-    const [{ data: acc }, { data: cli }] = await Promise.all([
-      supabase.from('trading_accounts').select('*, client:client_id(first_name, last_name, email)').order('created_at', { ascending: false }),
-      supabase.from('clients').select('id, first_name, last_name, email').order('first_name'),
-    ]);
-    setAccounts(acc || []);
-    setClients(cli || []);
-    setLoading(false);
-  }
+function SymbolLogo({ symbol, size = 20 }) {
+  const meta = SYMBOL_META[symbol] || { bg:'#787b86', short: symbol?.[0]||'?' };
+  return (
+    <div style={{ width:size,height:size,borderRadius:'50%',background:meta.bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:size*0.42,fontWeight:'700',color:'white',fontFamily:'Inter,sans-serif',letterSpacing:'-0.5px' }}>
+      {meta.short}
+    </div>
+  );
+}
 
-  async function fetchTraders() {
-    setTsLoading(true);
-    try {
-      const data = await tsGet('trader_accounts?order=email.asc');
-      setTraders(Array.isArray(data) ? data : []);
-    } catch {}
-    setTsLoading(false);
-  }
+const DEFAULT_SYMBOLS = [
+  { symbol:'EUR/USD',label:'Euro / US Dollar', type:'Forex',  change:'+0.02%',up:true  },
+  { symbol:'GBP/USD',label:'Pound / US Dollar',type:'Forex',  change:'-0.08%',up:false },
+  { symbol:'USD/JPY',label:'US Dollar / Yen',  type:'Forex',  change:'+0.12%',up:true  },
+  { symbol:'XAU/USD',label:'Gold',             type:'Forex',  change:'+0.34%',up:true  },
+  { symbol:'BTC/USD',label:'Bitcoin / USD',    type:'Crypto', change:'+1.24%',up:true  },
+  { symbol:'ETH/USD',label:'Ethereum / USD',   type:'Crypto', change:'-0.55%',up:false },
+  { symbol:'AAPL',   label:'Apple Inc.',        type:'Stocks', change:'-0.41%',up:false },
+  { symbol:'TSLA',   label:'Tesla Inc.',        type:'Stocks', change:'+2.11%',up:true  },
+  { symbol:'NVDA',   label:'NVIDIA Corp.',      type:'Stocks', change:'+3.05%',up:true  },
+  { symbol:'MSFT',   label:'Microsoft Corp.',   type:'Stocks', change:'+0.18%',up:true  },
+  { symbol:'SPY',    label:'S&P 500 ETF',       type:'Indices',change:'+0.09%',up:true  },
+  { symbol:'QQQ',    label:'Nasdaq 100 ETF',    type:'Indices',change:'+0.22%',up:true  },
+];
 
-  // ── Export TradeScope traders to Excel ──
-  async function exportTraders() {
-    const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
-    const rows = traders.map(t => ({
-      'Email':        t.email,
-      'Trader ID':    t.id,
-      'Balance':      parseFloat(t.balance || 0).toFixed(2),
-      'Equity':       parseFloat(t.equity || 0).toFixed(2),
-      'Margin':       parseFloat(t.margin || 0).toFixed(2),
-      'Free Margin':  parseFloat(t.free_margin || 0).toFixed(2),
-      'Open P&L':     (parseFloat(t.equity || 0) - parseFloat(t.balance || 0)).toFixed(2),
-      'Leverage':     `1:${t.leverage || 100}`,
-      'Currency':     t.currency || 'USD',
-      'Created At':   t.created_at ? new Date(t.created_at).toLocaleDateString('en-GB') : '—',
-    }));
-    const ws = XLSX.utils.json_to_sheet(rows);
-    // Column widths
-    ws['!cols'] = [
-      { wch: 28 }, { wch: 38 }, { wch: 12 }, { wch: 12 },
-      { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 10 },
-      { wch: 10 }, { wch: 14 },
-    ];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'TradeScope Traders');
-    XLSX.writeFile(wb, `tradescope-traders-${new Date().toISOString().slice(0, 10)}.xlsx`);
-  }
+const INTERVALS = [
+  {label:'1m', value:'1min'  },
+  {label:'5m', value:'5min'  },
+  {label:'15m',value:'15min' },
+  {label:'1h', value:'1h'    },
+  {label:'4h', value:'4h'    },
+  {label:'1D', value:'1day'  },
+  {label:'1W', value:'1week' },
+  {label:'1M', value:'1month'},
+  {label:'3M', value:'3month'},
+  {label:'6M', value:'6month'},
+  {label:'1Y', value:'1year' },
+];
 
-  async function save() {
-    const payload = {
-      ...form,
-      balance: parseFloat(form.balance) || 0,
-      equity: parseFloat(form.equity) || 0,
-      margin: parseFloat(form.margin) || 0,
-      free_margin: parseFloat(form.free_margin) || 0,
-      margin_level: parseFloat(form.margin_level) || 0,
-      leverage: parseInt(form.leverage) || 100,
-      client_id: form.client_id || null,
-      updated_at: new Date().toISOString(),
+const INTERVAL_GROUPS = [
+  { label:'Minutes', options:['1m','5m','15m'] },
+  { label:'Hours',   options:['1h','4h']        },
+  { label:'Days+',   options:['1D','1W','1M','3M','6M','1Y'] },
+];
+
+const LEFT_TOOLS = [
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l15 9-7 2-3 7z"/></svg>, title:'Cursor', group:1 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="2"/><line x1="12" y1="2" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="22"/><line x1="2" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="22" y2="12"/></svg>, title:'Crosshair', group:1 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="4" y1="20" x2="20" y2="4"/><circle cx="4" cy="20" r="2" fill="currentColor" stroke="none"/><circle cx="20" cy="4" r="2" fill="currentColor" stroke="none"/></svg>, title:'Trend Line', group:2 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="2" y1="12" x2="22" y2="12"/><polyline points="18,8 22,12 18,16"/></svg>, title:'Horizontal Ray', group:2 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="2" y1="12" x2="22" y2="12" strokeDasharray="3 2"/></svg>, title:'Horizontal Line', group:2 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="12" y1="2" x2="12" y2="22" strokeDasharray="3 2"/></svg>, title:'Vertical Line', group:2 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="3" y1="18" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="0" opacity="0.5" strokeDasharray="3 2"/></svg>, title:'Parallel Channel', group:2 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="3" y1="5" x2="21" y2="5"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="3" y1="20" x2="21" y2="20"/><line x1="3" y1="3" x2="3" y2="22" strokeWidth="1.2"/></svg>, title:'Fib Retracement', group:3 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="1"/></svg>, title:'Rectangle', group:4 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><ellipse cx="12" cy="12" rx="9" ry="6"/></svg>, title:'Ellipse', group:4 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12,3 22,21 2,21"/></svg>, title:'Triangle', group:4 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="12" y1="7" x2="12" y2="20"/></svg>, title:'Text', group:5 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16" strokeWidth="2.5"/></svg>, title:'Note', group:5 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="8" x2="2" y2="16"/><line x1="22" y1="8" x2="22" y2="16"/><line x1="12" y1="9" x2="12" y2="15"/></svg>, title:'Measure', group:6 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="10" cy="10" r="6"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="7" y1="10" x2="13" y2="10"/><line x1="10" y1="7" x2="10" y2="13"/></svg>, title:'Zoom', group:6 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M6 3h4v9a2 2 0 004 0V3h4v9a6 6 0 01-12 0z"/><line x1="6" y1="21" x2="10" y2="21"/><line x1="14" y1="21" x2="18" y2="21"/></svg>, title:'Magnet', group:7 },
+  { icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3,6 5,6 21,6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>, title:'Remove All', group:8 },
+];
+
+function fmt(n,d=5){return n!=null?Number(n).toFixed(d):'—';}
+function fmtP(n){return n>=0?`+$${n.toFixed(2)}`:`-$${Math.abs(n).toFixed(2)}`;}
+
+function useIsMobile(){
+  const[v,set]=useState(window.innerWidth<768);
+  useEffect(()=>{const h=()=>set(window.innerWidth<768);window.addEventListener('resize',h);return()=>window.removeEventListener('resize',h);},[]);
+  return v;
+}
+
+function usePolygonPrices(symbols){
+  const[prices,setPrices]=useState({});
+  const wsRefs=useRef({});
+
+  useEffect(()=>{
+    if(!symbols.length) return;
+
+    // Initial price fetch from Twelve Data (last known prices for all symbols)
+    (async()=>{
+      try{
+        const batch1=symbols.slice(0,8);
+        const res1=await fetch(`https://api.twelvedata.com/price?symbol=${batch1.join(',')}&apikey=${TWELVE_KEY}`);
+        const data1=await res1.json();
+        if(batch1.length===1&&data1.price) setPrices(p=>({...p,[batch1[0]]:parseFloat(data1.price)}));
+        else batch1.forEach(s=>{if(data1[s]?.price) setPrices(p=>({...p,[s]:parseFloat(data1[s].price)}));});
+        // Batch 2 after 5s
+        const batch2=symbols.slice(8);
+        if(batch2.length) setTimeout(async()=>{
+          try{
+            const res2=await fetch(`https://api.twelvedata.com/price?symbol=${batch2.join(',')}&apikey=${TWELVE_KEY}`);
+            const data2=await res2.json();
+            if(batch2.length===1&&data2.price) setPrices(p=>({...p,[batch2[0]]:parseFloat(data2.price)}));
+            else batch2.forEach(s=>{if(data2[s]?.price) setPrices(p=>({...p,[s]:parseFloat(data2[s].price)}));});
+          }catch{}
+        },1500);
+      }catch{}
+    })();
+
+    const groups={};
+    symbols.forEach(sym=>{
+      const meta=SYMBOL_META[sym];
+      if(!meta) return;
+      if(!groups[meta.wsUrl]) groups[meta.wsUrl]=[];
+      groups[meta.wsUrl].push(sym);
+    });
+
+    Object.entries(groups).forEach(([url,syms])=>{
+      if(wsRefs.current[url]) wsRefs.current[url].close();
+      const ws=new WebSocket(url);
+      wsRefs.current[url]=ws;
+      ws.onopen=()=>ws.send(JSON.stringify({action:'auth',params:POLYGON_KEY}));
+      ws.onmessage=(evt)=>{
+        try{
+          const msgs=JSON.parse(evt.data);
+          msgs.forEach(msg=>{
+            if(msg.ev==='status'&&msg.status==='auth_success'){
+              const channels=syms.map(s=>SYMBOL_META[s]?.channel).filter(Boolean);
+              ws.send(JSON.stringify({action:'subscribe',params:channels.join(',')}));
+            }
+            if(msg.ev==='CA'){
+              const sym=Object.keys(SYMBOL_META).find(s=>SYMBOL_META[s].pair===msg.pair);
+              if(sym) setPrices(p=>({...p,[sym]:msg.c||msg.a}));
+            }
+            if(msg.ev==='XAS'){
+              const sym=Object.keys(SYMBOL_META).find(s=>SYMBOL_META[s].pair===msg.pair);
+              if(sym) setPrices(p=>({...p,[sym]:msg.c||msg.ep||msg.a}));
+            }
+            if(msg.ev==='A'){
+              const sym=Object.keys(SYMBOL_META).find(s=>SYMBOL_META[s].pair===msg.sym);
+              if(sym) setPrices(p=>({...p,[sym]:msg.c||msg.a}));
+            }
+          });
+        }catch{}
+      };
+      ws.onerror=(e)=>console.warn('WS error:',url,e);
+      ws.onclose=()=>{
+        if(wsRefs.current[url+'_stopped']) return;
+        const attempt=(wsRefs.current[url+'_attempt']||0)+1;
+        wsRefs.current[url+'_attempt']=attempt;
+        const delay=Math.min(1000*Math.pow(2,attempt-1),30000);
+        console.log(`WS reconnecting ${url} in ${delay}ms (attempt ${attempt})`);
+        wsRefs.current[url+'_timer']=setTimeout(()=>{
+          if(wsRefs.current[url+'_stopped']) return;
+          const ws2=new WebSocket(url);
+          wsRefs.current[url]=ws2;
+          ws2.onopen=()=>ws2.send(JSON.stringify({action:'auth',params:POLYGON_KEY}));
+          ws2.onmessage=ws.onmessage;
+          ws2.onerror=ws.onerror;
+          ws2.onclose=ws.onclose;
+        },delay);
+      };
+    });
+
+    return()=>{
+      Object.keys(wsRefs.current).forEach(k=>{
+        if(k.endsWith('_timer')) clearTimeout(wsRefs.current[k]);
+        if(k.endsWith('_stopped')||k.endsWith('_timer')||k.endsWith('_attempt')) return;
+        wsRefs.current[k+'_stopped']=true;
+        const ws=wsRefs.current[k];
+        if(ws&&ws.close){ws.onclose=null;ws.close();}
+      });
+      wsRefs.current={};
     };
-    if (editItem) {
-      await supabase.from('trading_accounts').update(payload).eq('id', editItem.id);
-    } else {
-      await supabase.from('trading_accounts').insert(payload);
+  },[symbols.join(',')]);
+
+  return prices;
+}
+
+export default function Platform() {
+  const{trader,signOut,fetchTrader}=useAuth();
+  const isMobile=useIsMobile();
+  const chartContainerRef=useRef();
+  const chartRef=useRef();
+  const seriesRef=useRef();
+  const volumeSeriesRef=useRef();
+
+  const[selectedSymbol,setSelectedSymbol]=useState(DEFAULT_SYMBOLS[0]);
+  const[activeInterval,setActiveInterval]=useState('5min');
+  const[showIntervals,setShowIntervals]=useState(false);
+  const[priceChange,setPriceChange]=useState(0);
+  const[positions,setPositions]=useState([]);
+  const[history,setHistory]=useState([]);
+  const[orderType,setOrderType]=useState('buy');
+  const[lotSize,setLotSize]=useState('0.01');
+  const[sl,setSl]=useState('');
+  const[tp,setTp]=useState('');
+  const[placing,setPlacing]=useState(false);
+  const[tab,setTab]=useState('positions');
+  const[symbolSearch,setSymbolSearch]=useState('');
+  const[showSymbols,setShowSymbols]=useState(false);
+  const[searchResults,setSearchResults]=useState([]);
+  const[searchLoading,setSearchLoading]=useState(false);
+  const symbolDropdownRef=useRef(null);
+  const intervalDropdownRef=useRef(null);
+  const[activeTool,setActiveTool]=useState('Crosshair');
+  const[mobileView,setMobileView]=useState('chart');
+  const[showOrderDrawer,setShowOrderDrawer]=useState(false);
+  const[openPrices,setOpenPrices]=useState({});
+  const[candlePrice,setCandlePrice]=useState(null);
+  const[drawingsBySymbol,setDrawingsBySymbol]=useState({});
+  const drawings=drawingsBySymbol[selectedSymbol.symbol]||[];
+  const setDrawings=(updater)=>{
+    setDrawingsBySymbol(prev=>{
+      const sym=selectedSymbol.symbol;
+      const current=prev[sym]||[];
+      const next=typeof updater==='function'?updater(current):updater;
+      return{...prev,[sym]:next};
+    });
+  };
+  const[undoStack,setUndoStack]=useState([]); // history of drawings arrays
+  const[selectedDrawing,setSelectedDrawing]=useState(null); // index of selected drawing
+  const[activeDrawing,setActiveDrawing]=useState(null); // {type, points:[]}
+  const canvasRef=useRef(null);
+  const isDrawing=useRef(false);
+  const searchTimer=useRef(null);
+
+  const allSymbols=DEFAULT_SYMBOLS.map(s=>s.symbol);
+  const livePrices=usePolygonPrices(allSymbols);
+  const price=livePrices[selectedSymbol.symbol]||candlePrice||null;
+
+  useEffect(()=>{
+    if(!chartContainerRef.current) return;
+    const chart=createChart(chartContainerRef.current,{
+      layout:{background:{color:C.bg},textColor:C.muted},
+      grid:{vertLines:{color:'#1e222d'},horzLines:{color:'#1e222d'}},
+      crosshair:{mode:1},rightPriceScale:{borderColor:C.border2},
+      timeScale:{borderColor:C.border2,timeVisible:true},
+      width:chartContainerRef.current.clientWidth,height:chartContainerRef.current.clientHeight,
+    });
+    const series=chart.addCandlestickSeries({upColor:C.green,downColor:C.red,borderUpColor:C.green,borderDownColor:C.red,wickUpColor:C.green,wickDownColor:C.red});
+    const volSeries=chart.addHistogramSeries({color:'rgba(38,166,154,0.3)',priceFormat:{type:'volume'},priceScaleId:'volume',scaleMargins:{top:0.85,bottom:0}});
+    chartRef.current=chart;seriesRef.current=series;volumeSeriesRef.current=volSeries;
+    const ro=new ResizeObserver(()=>{if(chartContainerRef.current) chart.applyOptions({width:chartContainerRef.current.clientWidth,height:chartContainerRef.current.clientHeight});});
+    ro.observe(chartContainerRef.current);
+    return()=>{chart.remove();ro.disconnect();};
+  },[]);
+
+  // ── Click-outside to close dropdowns ──
+  useEffect(()=>{
+    const handler=(e)=>{
+      if(symbolDropdownRef.current&&!symbolDropdownRef.current.contains(e.target)) setShowSymbols(false);
+      if(intervalDropdownRef.current&&!intervalDropdownRef.current.contains(e.target)) setShowIntervals(false);
+    };
+    document.addEventListener('mousedown',handler);
+    return()=>document.removeEventListener('mousedown',handler);
+  },[]);
+
+  // ── Fetch daily open prices for watchlist % change ──
+  useEffect(()=>{
+    const fetchDailyOpens=async()=>{
+      const forexCrypto=DEFAULT_SYMBOLS.filter(s=>SYMBOL_META[s.symbol]?.polyTicker);
+      const today=new Date().toISOString().slice(0,10);
+      const yesterday=new Date(Date.now()-2*24*60*60*1000).toISOString().slice(0,10);
+      const results={};
+      await Promise.all(forexCrypto.map(async(sym)=>{
+        try{
+          const meta=SYMBOL_META[sym.symbol];
+          const url=`https://api.polygon.io/v2/aggs/ticker/${meta.polyTicker}/range/1/day/${yesterday}/${today}?adjusted=true&sort=desc&limit=2&apiKey=${POLYGON_KEY}`;
+          const res=await fetch(url);
+          const data=await res.json();
+          if(data.results?.length) results[sym.symbol]=data.results[0].o;
+        }catch{}
+      }));
+      setOpenPrices(results);
+    };
+    fetchDailyOpens();
+  },[]);
+
+
+  // ── Canvas drawing helpers ──
+  const getCanvasPoint=(e)=>{
+    const canvas=canvasRef.current;
+    if(!canvas) return null;
+    const rect=canvas.getBoundingClientRect();
+    return{x:e.clientX-rect.left, y:e.clientY-rect.top};
+  };
+
+  const redrawCanvas=useCallback(()=>{
+    const canvas=canvasRef.current;
+    if(!canvas) return;
+    const ctx=canvas.getContext('2d');
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    const allDrawings=[...drawings, ...(activeDrawing?[activeDrawing]:[])];
+
+    allDrawings.forEach((d,i)=>{
+      const isSelected=i===selectedDrawing;
+      ctx.strokeStyle=isSelected?'#ff9800':d.color||'#2962ff';
+      ctx.lineWidth=isSelected?2.5:d.lineWidth||1.5;
+      ctx.setLineDash(d.dash||[]);
+      ctx.lineCap='round';
+      ctx.lineJoin='round';
+
+      if(!d.points||d.points.length===0) return;
+
+      if(d.type==='Trend Line'||d.type==='Horizontal Ray'||d.type==='Horizontal Line'||d.type==='Vertical Line'||d.type==='Parallel Channel'){
+        if(d.points.length>=2){
+          const[p1,p2]=d.points;
+          if(d.type==='Horizontal Line'){
+            ctx.beginPath();ctx.moveTo(0,p1.y);ctx.lineTo(canvas.width,p1.y);ctx.stroke();
+          } else if(d.type==='Vertical Line'){
+            ctx.beginPath();ctx.moveTo(p1.x,0);ctx.lineTo(p1.x,canvas.height);ctx.stroke();
+          } else if(d.type==='Horizontal Ray'){
+            ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(canvas.width,p1.y);ctx.stroke();
+          } else {
+            ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.stroke();
+          }
+          // Draw endpoint dots
+          ctx.fillStyle=d.color||'#2962ff';
+          [p1,p2].forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();});
+        }
+      }
+
+      if(d.type==='Rectangle'){
+        if(d.points.length>=2){
+          const[p1,p2]=d.points;
+          ctx.beginPath();
+          ctx.rect(p1.x,p1.y,p2.x-p1.x,p2.y-p1.y);
+          ctx.stroke();
+          ctx.fillStyle='rgba(41,98,255,0.05)';
+          ctx.fill();
+        }
+      }
+
+      if(d.type==='Ellipse'){
+        if(d.points.length>=2){
+          const[p1,p2]=d.points;
+          const cx=(p1.x+p2.x)/2, cy=(p1.y+p2.y)/2;
+          const rx=Math.abs(p2.x-p1.x)/2, ry=Math.abs(p2.y-p1.y)/2;
+          ctx.beginPath();ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);ctx.stroke();
+        }
+      }
+
+      if(d.type==='Triangle'){
+        if(d.points.length>=3){
+          const[p1,p2,p3]=d.points;
+          ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.lineTo(p3.x,p3.y);ctx.closePath();ctx.stroke();
+        } else if(d.points.length===2){
+          const[p1,p2]=d.points;
+          ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.stroke();
+        }
+      }
+
+      if(d.type==='Fib Retracement'){
+        if(d.points.length>=2){
+          const[p1,p2]=d.points;
+          const levels=[0,0.236,0.382,0.5,0.618,0.786,1];
+          const colors=['#26a69a','#2962ff','#9c27b0','#ff9800','#9c27b0','#2962ff','#ef5350'];
+          levels.forEach((lvl,i)=>{
+            const y=p1.y+(p2.y-p1.y)*lvl;
+            ctx.strokeStyle=colors[i];ctx.lineWidth=1;ctx.setLineDash([4,2]);
+            ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();
+            ctx.fillStyle=colors[i];ctx.font='10px Inter,sans-serif';
+            ctx.fillText(`${(lvl*100).toFixed(1)}%`,4,y-3);
+          });
+        }
+      }
+
+      if(d.type==='Measure'){
+        if(d.points.length>=2){
+          const[p1,p2]=d.points;
+          ctx.strokeStyle='#ff9800';ctx.lineWidth=1;ctx.setLineDash([]);
+          ctx.beginPath();ctx.rect(p1.x,p1.y,p2.x-p1.x,p2.y-p1.y);ctx.stroke();
+          ctx.fillStyle='rgba(255,152,0,0.1)';ctx.fill();
+          const w=Math.abs(p2.x-p1.x).toFixed(0),h=Math.abs(p2.y-p1.y).toFixed(0);
+          ctx.fillStyle='#ff9800';ctx.font='11px Inter,sans-serif';
+          ctx.fillText(`${w}×${h}px`,(p1.x+p2.x)/2-20,(p1.y+p2.y)/2);
+        }
+      }
+    });
+  },[drawings,activeDrawing,selectedDrawing]);
+
+  useEffect(()=>{redrawCanvas();},[redrawCanvas]);
+
+  // ── Undo with Ctrl+Z, Delete selected with Delete/Backspace ──
+  useEffect(()=>{
+    const handleKeyDown=(e)=>{
+      if((e.metaKey||e.ctrlKey)&&e.key==='z'){
+        e.preventDefault();
+        setDrawings(prev=>{
+          if(prev.length===0) return prev;
+          const next=prev.slice(0,-1);
+          return next;
+        });
+        setSelectedDrawing(null);
+      }
+      if((e.key==='Delete'||e.key==='Backspace')&&selectedDrawing!==null){
+        e.preventDefault();
+        setDrawings(prev=>prev.filter((_,i)=>i!==selectedDrawing));
+        setSelectedDrawing(null);
+      }
+    };
+    window.addEventListener('keydown',handleKeyDown);
+    return()=>window.removeEventListener('keydown',handleKeyDown);
+  },[selectedDrawing]);
+
+  // ── Hit detection: find if a point is near a drawing ──
+  const hitTest=(pt,drawing)=>{
+    if(!drawing.points||drawing.points.length<2) return false;
+    const[p1,p2]=drawing.points;
+    const THRESHOLD=15;
+    if(drawing.type==='Horizontal Line'||drawing.type==='Horizontal Ray'){
+      return Math.abs(pt.y-p1.y)<THRESHOLD;
     }
-    setShowModal(false); setEditItem(null); setForm(empty);
-    fetchAll();
+    if(drawing.type==='Vertical Line'){
+      return Math.abs(pt.x-p1.x)<THRESHOLD;
+    }
+    // Distance from point to line segment
+    const dx=p2.x-p1.x, dy=p2.y-p1.y;
+    const len=Math.sqrt(dx*dx+dy*dy);
+    if(len===0) return false;
+    const t=Math.max(0,Math.min(1,((pt.x-p1.x)*dx+(pt.y-p1.y)*dy)/(len*len)));
+    const projX=p1.x+t*dx, projY=p1.y+t*dy;
+    const dist=Math.sqrt((pt.x-projX)**2+(pt.y-projY)**2);
+    return dist<THRESHOLD;
+  };
+
+  // Resize canvas when container resizes
+  useEffect(()=>{
+    const canvas=canvasRef.current;
+    const container=chartContainerRef.current;
+    if(!canvas||!container) return;
+    const ro=new ResizeObserver(()=>{
+      canvas.width=container.clientWidth;
+      canvas.height=container.clientHeight;
+      redrawCanvas();
+    });
+    ro.observe(container);
+    return()=>ro.disconnect();
+  },[redrawCanvas]);
+
+  const handleCanvasMouseDown=(e)=>{
+    if(activeTool==='Remove All'){setDrawings([]);setSelectedDrawing(null);return;}
+    if(activeTool==='Crosshair'||activeTool==='Zoom'||activeTool==='Magnet') return;
+    if(activeTool==='Cursor'){
+      // Hit test to select a drawing
+      const pt=getCanvasPoint(e);
+      if(!pt) return;
+      let found=null;
+      for(let i=drawings.length-1;i>=0;i--){
+        if(hitTest(pt,drawings[i])){found=i;break;}
+      }
+      setSelectedDrawing(found);
+      return;
+    }
+    const pt=getCanvasPoint(e);
+    if(!pt) return;
+    isDrawing.current=true;
+    if(activeTool==='Triangle'&&activeDrawing?.type==='Triangle'&&activeDrawing.points.length===2){
+      // Third point for triangle
+      setDrawings(prev=>[...prev,{...activeDrawing,points:[...activeDrawing.points,pt]}]);
+      setActiveDrawing(null);
+      isDrawing.current=false;
+    } else {
+      setActiveDrawing({type:activeTool,points:[pt,pt],color:'#2962ff',lineWidth:1.5});
+    }
+  };
+
+  const handleCanvasMouseMove=(e)=>{
+    if(!isDrawing.current||!activeDrawing) return;
+    const pt=getCanvasPoint(e);
+    if(!pt) return;
+    setActiveDrawing(prev=>({...prev,points:[prev.points[0],pt]}));
+  };
+
+  const handleCanvasMouseUp=(e)=>{
+    if(!isDrawing.current||!activeDrawing) return;
+    const pt=getCanvasPoint(e);
+    if(!pt) return;
+    if(activeTool==='Triangle'){
+      // Keep active for 3rd point
+      setActiveDrawing(prev=>({...prev,points:[prev.points[0],pt]}));
+      isDrawing.current=false;
+    } else {
+      setDrawings(prev=>[...prev,{...activeDrawing,points:[activeDrawing.points[0],pt]}]);
+      setSelectedDrawing(null);
+      setActiveDrawing(null);
+      isDrawing.current=false;
+    }
+  };
+
+  const canvasCursor=()=>{
+    if(activeTool==='Cursor') return 'default';
+    if(activeTool==='Crosshair') return 'crosshair';
+    if(activeTool==='Zoom') return 'zoom-in';
+    if(activeTool==='Remove All') return 'default';
+    return 'crosshair';
+  };
+
+  const fetchCandles=useCallback(async()=>{
+    const meta=SYMBOL_META[selectedSymbol.symbol];
+    try{
+      if(meta?.polyTicker){
+        // ── POLYGON (Forex + Crypto) ──
+        const{multiplier,timespan}=toPolygonInterval(activeInterval);
+        const to=new Date().toISOString().slice(0,10);
+        const from=new Date(Date.now()-parseInt(daysBack(activeInterval))*24*60*60*1000).toISOString().slice(0,10);
+        const url=`https://api.polygon.io/v2/aggs/ticker/${meta.polyTicker}/range/${multiplier}/${timespan}/${from}/${to}?adjusted=true&sort=asc&limit=500&apiKey=${POLYGON_KEY}`;
+        const res=await fetch(url);
+        const data=await res.json();
+        if(!data.results?.length) return;
+        const candles=data.results.map(v=>({
+          time:Math.floor(v.t/1000),
+          open:v.o,high:v.h,low:v.l,close:v.c,
+        }));
+        const volumes=data.results.map(v=>({
+          time:Math.floor(v.t/1000),
+          value:v.v||0,
+          color:v.c>=v.o?'rgba(38,166,154,0.4)':'rgba(239,83,80,0.4)',
+        }));
+        seriesRef.current?.setData(candles);
+        volumeSeriesRef.current?.setData(volumes);
+        const last=candles[candles.length-1];
+        const prev=candles[candles.length-2];
+        setCandlePrice(last.close);
+        if(prev) setPriceChange(((last.close-prev.close)/prev.close)*100);
+      } else {
+        // ── TWELVE DATA (Stocks) ──
+        const res=await fetch(`https://api.twelvedata.com/time_series?symbol=${selectedSymbol.symbol}&interval=${activeInterval}&outputsize=200&apikey=${TWELVE_KEY}`);
+        const data=await res.json();
+        if(!data.values?.length) return;
+        const sorted=[...data.values].reverse();
+        const candles=sorted.map(v=>({time:Math.floor(new Date(v.datetime).getTime()/1000),open:parseFloat(v.open),high:parseFloat(v.high),low:parseFloat(v.low),close:parseFloat(v.close)}));
+        const volumes=sorted.map(v=>({time:Math.floor(new Date(v.datetime).getTime()/1000),value:parseFloat(v.volume)||0,color:parseFloat(v.close)>=parseFloat(v.open)?'rgba(38,166,154,0.4)':'rgba(239,83,80,0.4)'}));
+        seriesRef.current?.setData(candles);
+        volumeSeriesRef.current?.setData(volumes);
+        const last=candles[candles.length-1];
+        const prev=candles[candles.length-2];
+        setCandlePrice(last.close);
+        if(prev) setPriceChange(((last.close-prev.close)/prev.close)*100);
+      }
+    }catch(e){console.error(e);}
+  },[selectedSymbol,activeInterval]);
+  useEffect(()=>{fetchCandles();},[fetchCandles]);
+
+  const selectedLivePrice=livePrices[selectedSymbol.symbol];
+  useEffect(()=>{
+    if(selectedLivePrice&&candlePrice) setPriceChange(((selectedLivePrice-candlePrice)/candlePrice)*100);
+  },[selectedLivePrice,candlePrice]);
+
+  async function fetchPositions(){
+    if(!trader) return;
+    const{data:open}=await supabase.from('trades').select('*').eq('trader_id',trader.id).eq('status','open').order('opened_at',{ascending:false});
+    const{data:closed}=await supabase.from('trades').select('*').eq('trader_id',trader.id).eq('status','closed').order('closed_at',{ascending:false}).limit(20);
+    setPositions(open||[]);setHistory(closed||[]);
+  }
+  useEffect(()=>{fetchPositions();},[trader]);
+
+  // ── P&L calculation per asset type ──
+  function calcProfit(trade, currentPrice) {
+    const pip = trade.type==='buy' ? currentPrice - trade.open_price : trade.open_price - currentPrice;
+    const meta = SYMBOL_META[trade.symbol];
+    const type = meta?.polyType || 'forex';
+    if (type==='crypto') {
+      // Crypto: profit = pip * lot_size (1 lot = 1 coin)
+      return pip * trade.lot_size;
+    } else if (type==='stocks') {
+      // Stocks: profit = pip * lot_size * 100 (1 lot = 100 shares)
+      return pip * trade.lot_size * 100;
+    } else {
+      // Forex/Gold: standard pip value
+      const isJPY = trade.symbol.includes('JPY');
+      const isGold = trade.symbol.includes('XAU');
+      const contractSize = isGold ? 100 : 100000;
+      const pipSize = isJPY ? 0.01 : isGold ? 0.1 : 0.0001;
+      return (pip / pipSize) * pipSize * contractSize * trade.lot_size;
+    }
   }
 
-  async function remove(id) {
-    if (!window.confirm('Delete this trading account?')) return;
-    await supabase.from('trading_accounts').delete().eq('id', id);
-    fetchAll();
-  }
-
-  const filtered = accounts.filter(a => {
-    if (filterStatus !== 'all' && a.status !== filterStatus) return false;
-    if (filterPlatform !== 'all' && a.platform !== filterPlatform) return false;
-    if (search && !a.account_number?.toLowerCase().includes(search.toLowerCase()) &&
-      !a.client?.first_name?.toLowerCase().includes(search.toLowerCase()) &&
-      !a.client?.last_name?.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
+  const livePositions=positions.map(p=>{
+    const cur=livePrices[p.symbol]||p.open_price;
+    const pip=p.type==='buy'?cur-p.open_price:p.open_price-cur;
+    return{...p,live_profit:calcProfit(p, cur),current_price:cur};
   });
+  const totalPnL=livePositions.reduce((s,p)=>s+(p.live_profit||0),0);
 
-  const filteredTraders = traders.filter(t =>
-    !tsSearch || t.email?.toLowerCase().includes(tsSearch.toLowerCase())
+  async function placeOrder(){
+    if(!trader||!price) return;
+    const lots=parseFloat(lotSize)||0.01;
+    if(lots<=0){alert('Lot size must be greater than 0');return;}
+    setPlacing(true);
+    await supabase.from('trades').insert({trader_id:trader.id,symbol:selectedSymbol.symbol,type:orderType,lot_size:lots,open_price:price,stop_loss:sl?parseFloat(sl):null,take_profit:tp?parseFloat(tp):null,status:'open'});
+    setSl('');setTp('');setPlacing(false);fetchPositions();
+    if(isMobile) setShowOrderDrawer(false);
+  }
+
+  async function closePosition(trade){
+    const closePrice=livePrices[trade.symbol]||trade.open_price;
+    const pip=trade.type==='buy'?closePrice-trade.open_price:trade.open_price-closePrice;
+    const profit=calcProfit(trade, closePrice);
+    await supabase.from('trades').update({status:'closed',close_price:closePrice,profit,closed_at:new Date().toISOString()}).eq('id',trade.id);
+    await supabase.from('trader_accounts').update({balance:trader.balance+profit,equity:trader.equity+profit}).eq('id',trader.id);
+    fetchPositions();if(fetchTrader) fetchTrader(trader.email);
+  }
+
+  const handleSymbolSearch=(value)=>{
+    setSymbolSearch(value);setSearchResults([]);
+    if(searchTimer.current) clearTimeout(searchTimer.current);
+    if(!value.trim()) return;
+    setSearchLoading(true);
+    searchTimer.current=setTimeout(async()=>{
+      try{
+        const res=await fetch(`https://api.twelvedata.com/symbol_search?symbol=${encodeURIComponent(value)}&outputsize=10&apikey=${TWELVE_KEY}`);
+        const data=await res.json();
+        if(data.data) setSearchResults(data.data.map(r=>({symbol:r.symbol,label:r.instrument_name||r.symbol,type:r.instrument_type==='Digital Currency'?'Crypto':r.instrument_type==='Physical Currency'?'Forex':'Stocks'})));
+      }catch{}setSearchLoading(false);
+    },400);
+  };
+
+  const decimals=selectedSymbol.type==='Stocks'?2:selectedSymbol.symbol.includes('JPY')?3:5;
+  const spread=(()=>{
+    const sym=selectedSymbol.symbol;
+    if(sym.includes('JPY')) return 0.02;
+    if(sym.includes('XAU')) return 0.30;
+    if(sym==='BTC/USD') return 5.0;
+    if(sym==='ETH/USD') return 1.0;
+    if(selectedSymbol.type==='Stocks'||selectedSymbol.type==='Indices') return 0.02;
+    return 0.00002; // standard forex
+  })();
+  const bid=price?price-spread/2:null;
+  const ask=price?price+spread/2:null;
+  const activeLabel=INTERVALS.find(i=>i.value===activeInterval)?.label||'5m';
+
+  const orderPanelContent=(
+    <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',borderBottom:`1px solid ${C.border}`}}>
+        <button onClick={()=>setOrderType('buy')} style={{padding:'12px 8px',background:orderType==='buy'?C.greenBg:'transparent',border:'none',borderBottom:orderType==='buy'?`2px solid ${C.green}`:'2px solid transparent',color:orderType==='buy'?C.green:C.muted,fontWeight:'700',cursor:'pointer',fontFamily:'Inter,sans-serif',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}}>
+          <span style={{fontSize:'9px',opacity:0.7,textTransform:'uppercase',letterSpacing:'0.5px'}}>Bid</span>
+          <span style={{fontSize:'13px',fontFamily:'monospace',fontWeight:'700'}}>{bid?fmt(bid,decimals):'—'}</span>
+          <span style={{fontSize:'12px',fontWeight:'800',letterSpacing:'0.5px'}}>BUY</span>
+        </button>
+        <button onClick={()=>setOrderType('sell')} style={{padding:'12px 8px',background:orderType==='sell'?C.redBg:'transparent',border:'none',borderBottom:orderType==='sell'?`2px solid ${C.red}`:'2px solid transparent',color:orderType==='sell'?C.red:C.muted,fontWeight:'700',cursor:'pointer',fontFamily:'Inter,sans-serif',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}}>
+          <span style={{fontSize:'9px',opacity:0.7,textTransform:'uppercase',letterSpacing:'0.5px'}}>Ask</span>
+          <span style={{fontSize:'13px',fontFamily:'monospace',fontWeight:'700'}}>{ask?fmt(ask,decimals):'—'}</span>
+          <span style={{fontSize:'12px',fontWeight:'800',letterSpacing:'0.5px'}}>SELL</span>
+        </button>
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'12px',display:'flex',flexDirection:'column',gap:'10px'}}>
+        <div style={{display:'flex',gap:'4px'}}>
+          {['Market','Limit','Stop'].map(t=>(
+            <button key={t} style={{flex:1,padding:'5px',background:t==='Market'?C.accentBg:'transparent',border:`1px solid ${t==='Market'?C.accent:C.border2}`,borderRadius:'4px',color:t==='Market'?C.accent:C.muted,fontSize:'10px',fontWeight:'600',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>{t}</button>
+          ))}
+        </div>
+        <div>
+          <label style={{display:'block',fontSize:'10px',fontWeight:'600',color:C.muted,marginBottom:'4px',textTransform:'uppercase',letterSpacing:'0.5px'}}>Quantity (Lots)</label>
+          <div style={{display:'flex',alignItems:'center',gap:'4px'}}>
+            <button onClick={()=>setLotSize(v=>Math.max(0.01,parseFloat(v)-0.01).toFixed(2))} style={{width:'28px',height:'28px',background:C.panel2,border:`1px solid ${C.border2}`,borderRadius:'4px',color:C.text,fontSize:'16px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>−</button>
+            <input type="number" value={lotSize} onChange={e=>{const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0) setLotSize(e.target.value);else if(e.target.value==='') setLotSize('0.01');}} step="0.01" min="0.01" style={{flex:1,padding:'6px 8px',background:C.bg,border:`1px solid ${C.border2}`,borderRadius:'4px',color:C.text,fontSize:'13px',fontWeight:'700',textAlign:'center',outline:'none',fontFamily:'monospace'}}/>
+            <button onClick={()=>setLotSize(v=>(parseFloat(v)+0.01).toFixed(2))} style={{width:'28px',height:'28px',background:C.panel2,border:`1px solid ${C.border2}`,borderRadius:'4px',color:C.text,fontSize:'16px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>+</button>
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}}>
+          <div>
+            <label style={{display:'block',fontSize:'10px',fontWeight:'600',color:C.red,marginBottom:'4px',textTransform:'uppercase',letterSpacing:'0.5px'}}>Stop Loss</label>
+            <input type="number" value={sl} onChange={e=>setSl(e.target.value)} placeholder="—" style={{width:'100%',boxSizing:'border-box',padding:'6px',background:C.bg,border:'1px solid rgba(239,83,80,0.3)',borderRadius:'4px',color:C.text,fontSize:'11px',outline:'none',fontFamily:'monospace'}}/>
+          </div>
+          <div>
+            <label style={{display:'block',fontSize:'10px',fontWeight:'600',color:C.green,marginBottom:'4px',textTransform:'uppercase',letterSpacing:'0.5px'}}>Take Profit</label>
+            <input type="number" value={tp} onChange={e=>setTp(e.target.value)} placeholder="—" style={{width:'100%',boxSizing:'border-box',padding:'6px',background:C.bg,border:'1px solid rgba(38,166,154,0.3)',borderRadius:'4px',color:C.text,fontSize:'11px',outline:'none',fontFamily:'monospace'}}/>
+          </div>
+        </div>
+        <div style={{background:C.bg,borderRadius:'6px',padding:'8px 10px',display:'flex',flexDirection:'column',gap:'4px',border:`1px solid ${C.border}`}}>
+          {[['Margin',`$${price?((price*parseFloat(lotSize||0)*100000)/(trader?.leverage||100)).toFixed(2):'—'}`],['Leverage',`1:${trader?.leverage||100}`],['Pip Value',`$${(parseFloat(lotSize||0)*10).toFixed(2)}`]].map(([l,v])=>(
+            <div key={l} style={{display:'flex',justifyContent:'space-between',fontSize:'10px'}}>
+              <span style={{color:C.muted}}>{l}</span>
+              <span style={{color:C.text,fontFamily:'monospace'}}>{v}</span>
+            </div>
+          ))}
+        </div>
+        <button onClick={placeOrder} disabled={placing||!price} style={{padding:'11px',border:'none',borderRadius:'6px',background:placing||!price?C.border2:orderType==='buy'?C.green:C.red,color:'white',fontSize:'13px',fontWeight:'700',cursor:placing||!price?'not-allowed':'pointer',fontFamily:'Inter,sans-serif',textTransform:'uppercase',letterSpacing:'0.5px'}}>
+          {placing?'Placing...':`${orderType==='buy'?'▲ Buy':'▼ Sell'} ${selectedSymbol.symbol}`}
+        </button>
+      </div>
+      <div style={{padding:'10px 12px',borderTop:`1px solid ${C.border}`,display:'flex',flexDirection:'column',gap:'4px'}}>
+        {[{l:'Balance',v:`$${(trader?.balance||0).toFixed(2)}`},{l:'Equity',v:`$${((trader?.balance||0)+totalPnL).toFixed(2)}`,c:totalPnL>=0?C.green:C.red},{l:'Free Margin',v:`$${Math.max(0,(trader?.free_margin||0)+totalPnL).toFixed(2)}`},{l:'Open P&L',v:fmtP(totalPnL),c:totalPnL>=0?C.green:C.red}].map(({l,v,c})=>(
+          <div key={l} style={{display:'flex',justifyContent:'space-between',fontSize:'10px'}}>
+            <span style={{color:C.muted}}>{l}</span>
+            <span style={{color:c||C.text,fontWeight:'600',fontFamily:'monospace'}}>{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 
-  const totalBalance = accounts.reduce((s, a) => s + (parseFloat(a.balance) || 0), 0);
-  const tsTotalBal   = traders.reduce((s, t) => s + (parseFloat(t.balance) || 0), 0);
-
-  const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif' };
-  const labelStyle = { display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748B', marginBottom: '4px' };
-
-  return (
-    <div style={{ padding: '32px', fontFamily: "'Inter', sans-serif" }}>
-
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-        <div>
-          <h1 style={{ color: '#0F172A', fontSize: '22px', fontWeight: '700', margin: 0, letterSpacing: '-0.5px' }}>Trading Accounts</h1>
-          <p style={{ color: '#64748B', fontSize: '13px', margin: '4px 0 0' }}>{traders.length} TradeScope traders · {accounts.length} manual accounts</p>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={fetchTraders} title="Refresh TradeScope data"
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', background: 'white', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '500', color: '#475569', cursor: 'pointer' }}>
-            <RefreshCw size={13} /> Refresh
-          </button>
-          <button onClick={() => setShowModal(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: 'white', cursor: 'pointer' }}>
-            <Plus size={14} /> Add Account
-          </button>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
-        {[
-          { label: 'TradeScope Traders', value: traders.length,                   icon: Activity,   color: '#6366F1', bg: '#EEF2FF' },
-          { label: 'TS Total Balance',   value: `$${formatAmount(tsTotalBal)}`,   icon: DollarSign, color: '#059669', bg: '#ECFDF5' },
-          { label: 'Manual Accounts',    value: accounts.length,                  icon: TrendingUp, color: '#0369A1', bg: '#E0F2FE' },
-          { label: 'Manual Balance',     value: `$${formatAmount(totalBalance)}`, icon: DollarSign, color: '#7C3AED', bg: '#F5F3FF' },
-        ].map(({ label, value, icon: Icon, color, bg }) => (
-          <div key={label} style={{ background: 'white', borderRadius: '10px', border: '1px solid #E2E8F0', padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748B' }}>{label}</span>
-              <div style={{ background: bg, padding: '6px', borderRadius: '6px' }}><Icon size={14} color={color} /></div>
-            </div>
-            <div style={{ fontSize: '24px', fontWeight: '700', color: '#0F172A' }}>{value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #E2E8F0', marginBottom: '20px' }}>
-        {[
-          { id: 'tradescope', label: `TradeScope Traders (${traders.length})` },
-          { id: 'manual',     label: `Manual Accounts (${accounts.length})` },
-        ].map(t => (
-          <button key={t.id} onClick={() => setActiveTab(t.id)}
-            style={{ padding: '10px 20px', border: 'none', borderBottom: activeTab === t.id ? '2px solid #6366F1' : '2px solid transparent', background: 'none', fontSize: '13px', fontWeight: '600', color: activeTab === t.id ? '#6366F1' : '#94A3B8', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── TRADESCOPE TAB ── */}
-      {activeTab === 'tradescope' && (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-            <input value={tsSearch} onChange={e => setTsSearch(e.target.value)} placeholder="Search by email…"
-              style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', outline: 'none', width: '240px', fontFamily: 'Inter, sans-serif' }} />
-            <button onClick={exportTraders} disabled={traders.length === 0}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', background: 'white', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '500', color: traders.length === 0 ? '#94A3B8' : '#475569', cursor: traders.length === 0 ? 'not-allowed' : 'pointer' }}>
-              <Download size={13} /> Export ({traders.length})
-            </button>
-          </div>
-          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E2E8F0', overflow: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
-              <thead>
-                <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
-                  <th style={{ width: '20px', padding: '10px 8px 10px 16px' }} />
-                  {['Email / ID','Balance','Equity','Margin','Free Margin','P&L','Leverage','Currency','Actions'].map(h => (
-                    <th key={h} style={{ padding: '10px 8px', textAlign: h === 'Email / ID' ? 'left' : 'right', fontSize: '11px', fontWeight: '600', color: '#94A3B8', letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap', ...(h === 'Actions' ? { textAlign: 'left' } : {}) }}>{h}</th>
+  const positionsContent=(
+    <div style={{overflowY:'auto',flex:1}}>
+      {tab==='positions'?(
+        livePositions.length===0?<div style={{padding:'20px',textAlign:'center',color:C.muted,fontSize:'12px'}}>No open positions</div>:
+        isMobile?(
+          <div style={{display:'flex',flexDirection:'column',gap:'6px',padding:'8px'}}>
+            {livePositions.map(p=>(
+              <div key={p.id} style={{background:C.panel2,borderRadius:'8px',padding:'10px 12px',border:`1px solid ${C.border2}`}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                    <SymbolLogo symbol={p.symbol} size={20}/>
+                    <span style={{color:C.text,fontWeight:'700'}}>{p.symbol}</span>
+                    <span style={{color:p.type==='buy'?C.green:C.red,fontSize:'10px',fontWeight:'700',textTransform:'uppercase',background:p.type==='buy'?C.greenBg:C.redBg,padding:'2px 6px',borderRadius:'3px'}}>{p.type}</span>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                    <span style={{color:p.live_profit>=0?C.green:C.red,fontWeight:'700',fontSize:'13px'}}>{fmtP(p.live_profit)}</span>
+                    <button onClick={()=>closePosition(p)} style={{background:C.redBg,border:'1px solid rgba(239,83,80,0.3)',borderRadius:'4px',padding:'3px 8px',color:C.red,fontSize:'11px',fontWeight:'600',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>Close</button>
+                  </div>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'6px'}}>
+                  {[['Lots',p.lot_size],['Open',fmt(p.open_price,decimals)],['Current',fmt(p.current_price,decimals)]].map(([l,v])=>(
+                    <div key={l}><div style={{fontSize:'9px',color:C.muted,marginBottom:'1px'}}>{l}</div><div style={{fontSize:'11px',color:C.text,fontFamily:'monospace'}}>{v}</div></div>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {tsLoading ? (
-                  <tr><td colSpan={10} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>Loading TradeScope traders…</td></tr>
-                ) : filteredTraders.length === 0 ? (
-                  <tr><td colSpan={10} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>No traders found.</td></tr>
-                ) : filteredTraders.map(trader => (
-                  <TraderRow key={trader.id} trader={trader} onRefresh={fetchTraders} />
-                ))}
-              </tbody>
-            </table>
+                </div>
+              </div>
+            ))}
           </div>
-        </>
+        ):(
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'11px'}}>
+            <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
+              {['Symbol','Type','Lots','Open','Current','P&L','SL','TP',''].map(h=>(
+                <th key={h} style={{padding:'5px 10px',textAlign:'left',color:C.muted,fontWeight:'600',fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.5px',whiteSpace:'nowrap'}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {livePositions.map(p=>(
+                <tr key={p.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                  <td style={{padding:'7px 10px'}}><div style={{display:'flex',alignItems:'center',gap:'6px'}}><SymbolLogo symbol={p.symbol} size={18}/><span style={{color:C.text,fontWeight:'600'}}>{p.symbol}</span></div></td>
+                  <td style={{padding:'7px 10px'}}><span style={{color:p.type==='buy'?C.green:C.red,fontWeight:'700',textTransform:'uppercase',fontSize:'10px',background:p.type==='buy'?C.greenBg:C.redBg,padding:'2px 5px',borderRadius:'3px'}}>{p.type}</span></td>
+                  <td style={{padding:'7px 10px',color:C.text}}>{p.lot_size}</td>
+                  <td style={{padding:'7px 10px',color:C.muted,fontFamily:'monospace'}}>{fmt(p.open_price,decimals)}</td>
+                  <td style={{padding:'7px 10px',color:C.text,fontFamily:'monospace'}}>{fmt(p.current_price,decimals)}</td>
+                  <td style={{padding:'7px 10px',fontWeight:'700',color:p.live_profit>=0?C.green:C.red}}>{fmtP(p.live_profit)}</td>
+                  <td style={{padding:'7px 10px',color:C.muted,fontFamily:'monospace',fontSize:'10px'}}>{p.stop_loss?fmt(p.stop_loss,decimals):'—'}</td>
+                  <td style={{padding:'7px 10px',color:C.muted,fontFamily:'monospace',fontSize:'10px'}}>{p.take_profit?fmt(p.take_profit,decimals):'—'}</td>
+                  <td style={{padding:'7px 10px'}}><button onClick={()=>closePosition(p)} style={{background:C.redBg,border:'1px solid rgba(239,83,80,0.3)',borderRadius:'3px',padding:'3px 7px',color:C.red,fontSize:'10px',fontWeight:'600',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>Close</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
+      ):(
+        history.length===0?<div style={{padding:'20px',textAlign:'center',color:C.muted,fontSize:'12px'}}>No trade history</div>:
+        isMobile?(
+          <div style={{display:'flex',flexDirection:'column',gap:'6px',padding:'8px'}}>
+            {history.map(p=>(
+              <div key={p.id} style={{background:C.panel2,borderRadius:'8px',padding:'10px 12px',border:`1px solid ${C.border2}`}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                    <SymbolLogo symbol={p.symbol} size={20}/>
+                    <span style={{color:C.text,fontWeight:'700'}}>{p.symbol}</span>
+                    <span style={{color:p.type==='buy'?C.green:C.red,fontSize:'10px',fontWeight:'700',textTransform:'uppercase',background:p.type==='buy'?C.greenBg:C.redBg,padding:'2px 6px',borderRadius:'3px'}}>{p.type}</span>
+                  </div>
+                  <span style={{color:p.profit>=0?C.green:C.red,fontWeight:'700'}}>{fmtP(p.profit)}</span>
+                </div>
+                <div style={{fontSize:'10px',color:C.muted}}>{p.closed_at?new Date(p.closed_at).toLocaleString():'—'}</div>
+              </div>
+            ))}
+          </div>
+        ):(
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'11px'}}>
+            <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
+              {['Symbol','Type','Lots','Open','Close','P&L','Closed At'].map(h=>(
+                <th key={h} style={{padding:'5px 10px',textAlign:'left',color:C.muted,fontWeight:'600',fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.5px'}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {history.map(p=>(
+                <tr key={p.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                  <td style={{padding:'7px 10px'}}><div style={{display:'flex',alignItems:'center',gap:'6px'}}><SymbolLogo symbol={p.symbol} size={18}/><span style={{color:C.text,fontWeight:'600'}}>{p.symbol}</span></div></td>
+                  <td style={{padding:'7px 10px'}}><span style={{color:p.type==='buy'?C.green:C.red,fontWeight:'700',textTransform:'uppercase',fontSize:'10px',background:p.type==='buy'?C.greenBg:C.redBg,padding:'2px 5px',borderRadius:'3px'}}>{p.type}</span></td>
+                  <td style={{padding:'7px 10px',color:C.text}}>{p.lot_size}</td>
+                  <td style={{padding:'7px 10px',color:C.muted,fontFamily:'monospace'}}>{fmt(p.open_price,decimals)}</td>
+                  <td style={{padding:'7px 10px',color:C.muted,fontFamily:'monospace'}}>{fmt(p.close_price,decimals)}</td>
+                  <td style={{padding:'7px 10px',fontWeight:'700',color:p.profit>=0?C.green:C.red}}>{fmtP(p.profit)}</td>
+                  <td style={{padding:'7px 10px',color:C.muted,fontSize:'10px'}}>{p.closed_at?new Date(p.closed_at).toLocaleString():'—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
       )}
+    </div>
+  );
 
-      {/* ── MANUAL TAB ── */}
-      {activeTab === 'manual' && (
-        <>
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search account, client…"
-              style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', outline: 'none', width: '220px', fontFamily: 'Inter, sans-serif' }} />
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-              style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'Inter, sans-serif' }}>
-              <option value="all">All Statuses</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="suspended">Suspended</option>
-            </select>
-            <select value={filterPlatform} onChange={e => setFilterPlatform(e.target.value)}
-              style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', outline: 'none', background: 'white', fontFamily: 'Inter, sans-serif' }}>
-              <option value="all">All Platforms</option>
-              <option value="MT4">MT4</option>
-              <option value="MT5">MT5</option>
-              <option value="cTrader">cTrader</option>
-            </select>
+  if(isMobile){return(
+    <div style={{height:'100dvh',display:'flex',flexDirection:'column',background:C.bg,fontFamily:"'Inter',sans-serif",overflow:'hidden'}}>
+      <div style={{height:'52px',background:C.panel,borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',padding:'0 12px',gap:'8px',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+          <div style={{width:'22px',height:'22px',background:'linear-gradient(135deg,#2962FF,#00B8D9)',borderRadius:'5px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            <svg width="11" height="11" viewBox="0 0 18 18" fill="none"><polyline points="2,12 6,7 10,10 16,4" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </div>
-          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E2E8F0', overflow: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
-              <thead>
-                <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
-                  {['Account No.','Client','Platform','Type','Balance','Equity','Margin','Leverage','Status',''].map(h => (
-                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#94A3B8', letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={10} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>Loading...</td></tr>
-                ) : filtered.length === 0 ? (
-                  <tr><td colSpan={10} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>No trading accounts yet.</td></tr>
-                ) : filtered.map(a => (
-                  <tr key={a.id} style={{ borderTop: '1px solid #F1F5F9' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'white'}>
-                    <td style={{ padding: '12px 16px', color: '#0F172A', fontSize: '12px', fontWeight: '700', fontFamily: 'monospace' }}>{a.account_number}</td>
-                    <td style={{ padding: '12px 16px' }}>
-                      {a.client ? (
-                        <div>
-                          <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{a.client.first_name} {a.client.last_name}</div>
-                          <div style={{ fontSize: '11px', color: '#94A3B8' }}>{a.client.email}</div>
-                        </div>
-                      ) : <span style={{ color: '#94A3B8', fontSize: '12px' }}>—</span>}
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{ background: '#EEF2FF', color: '#4338CA', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700' }}>{a.platform}</span>
-                    </td>
-                    <td style={{ padding: '12px 16px', color: '#475569', fontSize: '12px', textTransform: 'capitalize' }}>{a.account_type}</td>
-                    <td style={{ padding: '12px 16px', color: '#0F172A', fontSize: '12px', fontWeight: '600', textAlign: 'right' }}>${formatAmount(a.balance)}</td>
-                    <td style={{ padding: '12px 16px', color: '#0F172A', fontSize: '12px', textAlign: 'right' }}>${formatAmount(a.equity)}</td>
-                    <td style={{ padding: '12px 16px', color: '#475569', fontSize: '12px', textAlign: 'right' }}>${formatAmount(a.margin)}</td>
-                    <td style={{ padding: '12px 16px', color: '#475569', fontSize: '12px', textAlign: 'center' }}>1:{a.leverage}</td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{ ...statusStyle(a.status), padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}>{a.status}</span>
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button onClick={() => { setEditItem(a); setForm({ client_id: a.client_id || '', account_number: a.account_number, platform: a.platform, account_type: a.account_type, currency: a.currency, balance: a.balance, equity: a.equity, margin: a.margin, free_margin: a.free_margin, margin_level: a.margin_level, leverage: a.leverage, status: a.status }); setShowModal(true); }}
-                          style={{ padding: '5px', border: '1px solid #E2E8F0', borderRadius: '6px', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                          <Edit2 size={13} color="#64748B" />
-                        </button>
-                        <button onClick={() => remove(a.id)}
-                          style={{ padding: '5px', border: '1px solid #FEE2E2', borderRadius: '6px', background: '#FFF5F5', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                          <Trash2 size={13} color="#EF4444" />
-                        </button>
+          <span style={{color:C.text,fontWeight:'700',fontSize:'13px'}}>TradeScope</span>
+        </div>
+        <div ref={symbolDropdownRef} style={{position:'relative',flex:1}}>
+          <button onClick={()=>setShowSymbols(!showSymbols)} style={{display:'flex',alignItems:'center',gap:'6px',background:C.panel2,border:`1px solid ${C.border2}`,borderRadius:'6px',padding:'5px 10px',color:C.text,cursor:'pointer',fontSize:'13px',fontWeight:'700',width:'100%',justifyContent:'space-between'}}>
+            <div style={{display:'flex',alignItems:'center',gap:'7px'}}><SymbolLogo symbol={selectedSymbol.symbol} size={18}/><span>{selectedSymbol.symbol}</span></div>
+            <ChevronDown size={12} color={C.muted}/>
+          </button>
+          {showSymbols&&(
+            <div style={{position:'absolute',top:'38px',left:0,right:0,background:C.panel,border:`1px solid ${C.border2}`,borderRadius:'8px',zIndex:200,boxShadow:'0 8px 32px rgba(0,0,0,0.6)'}}>
+              <div style={{padding:'8px',borderBottom:`1px solid ${C.border}`}}>
+                <div style={{display:'flex',alignItems:'center',gap:'8px',background:C.bg,borderRadius:'6px',padding:'6px 10px'}}>
+                  <Search size={12} color={C.muted}/>
+                  <input value={symbolSearch} onChange={e=>handleSymbolSearch(e.target.value)} placeholder="Search any symbol..." autoFocus style={{background:'none',border:'none',color:C.text,fontSize:'13px',outline:'none',width:'100%',fontFamily:'Inter,sans-serif'}}/>
+                  {symbolSearch&&<button onClick={()=>{setSymbolSearch('');setSearchResults([]);}} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,padding:0,display:'flex'}}><X size={12}/></button>}
+                </div>
+              </div>
+              <div style={{maxHeight:'300px',overflowY:'auto'}}>
+                {searchLoading&&<div style={{padding:'16px',textAlign:'center',color:C.muted,fontSize:'12px'}}>Searching...</div>}
+                {!symbolSearch&&DEFAULT_SYMBOLS.map(sym=>(
+                  <button key={sym.symbol} onClick={()=>{setSelectedSymbol(sym);setShowSymbols(false);setSymbolSearch('');}} style={{width:'100%',display:'flex',alignItems:'center',gap:'10px',padding:'9px 12px',background:selectedSymbol.symbol===sym.symbol?C.accentBg:'transparent',border:'none',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>
+                    <SymbolLogo symbol={sym.symbol} size={22}/>
+                    <span style={{flex:1,textAlign:'left',fontSize:'13px',fontWeight:'600',color:selectedSymbol.symbol===sym.symbol?C.accent:C.text}}>{sym.symbol}</span>
+                    <span style={{fontSize:'11px',color:C.muted,fontFamily:'monospace'}}>{livePrices[sym.symbol]?fmt(livePrices[sym.symbol],decimals):sym.change}</span>
+                  </button>
+                ))}
+                {searchResults.map(sym=>(
+                  <button key={sym.symbol} onClick={()=>{setSelectedSymbol(sym);setShowSymbols(false);setSymbolSearch('');setSearchResults([]);}} style={{width:'100%',display:'flex',alignItems:'center',gap:'10px',padding:'9px 12px',background:'transparent',border:'none',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>
+                    <SymbolLogo symbol={sym.symbol} size={22}/>
+                    <span style={{flex:1,textAlign:'left',fontSize:'13px',fontWeight:'600',color:C.text}}>{sym.symbol}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div style={{textAlign:'right',flexShrink:0}}>
+          <div style={{fontSize:'15px',fontWeight:'700',color:priceChange>=0?C.green:C.red,fontFamily:'monospace',lineHeight:1}}>{price?fmt(price,decimals):'—'}</div>
+          <div style={{fontSize:'10px',color:priceChange>=0?C.green:C.red,marginTop:'1px'}}>{priceChange>=0?'▲':'▼'} {Math.abs(priceChange).toFixed(2)}%</div>
+        </div>
+        <button onClick={signOut} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,padding:'4px',display:'flex',alignItems:'center',flexShrink:0}}><LogOut size={16}/></button>
+      </div>
+      <div style={{background:C.panel,borderBottom:`1px solid ${C.border}`,display:'flex',padding:'6px 12px',gap:'4px',flexShrink:0,overflowX:'auto'}}>
+        {INTERVALS.map(iv=>(<button key={iv.value} onClick={()=>setActiveInterval(iv.value)} style={{padding:'4px 10px',background:activeInterval===iv.value?C.accentBg:'transparent',border:activeInterval===iv.value?'1px solid rgba(41,98,255,0.4)':'1px solid transparent',borderRadius:'4px',color:activeInterval===iv.value?C.accent:C.muted,fontSize:'11px',fontWeight:'600',cursor:'pointer',fontFamily:'Inter,sans-serif',whiteSpace:'nowrap',flexShrink:0}}>{iv.label}</button>))}
+      </div>
+      <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{display:mobileView==='chart'?'flex':'none',flex:1,flexDirection:'column',overflow:'hidden'}}>
+          <div ref={chartContainerRef} style={{flex:1}}/>
+        </div>
+        <div style={{display:mobileView==='positions'?'flex':'none',flex:1,flexDirection:'column',overflow:'hidden'}}>
+          <div style={{display:'flex',borderBottom:`1px solid ${C.border}`,background:C.panel,flexShrink:0}}>
+            {['positions','history'].map(t=>(<button key={t} onClick={()=>setTab(t)} style={{padding:'10px 16px',background:'none',border:'none',borderBottom:tab===t?`2px solid ${C.accent}`:'2px solid transparent',color:tab===t?C.text:C.muted,fontSize:'11px',fontWeight:'600',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>{t==='positions'?`Open (${positions.length})`:`History (${history.length})`}</button>))}
+            <div style={{marginLeft:'auto',display:'flex',alignItems:'center',paddingRight:'12px'}}>
+              <span style={{fontSize:'10px',color:C.muted}}>P&L: <span style={{color:totalPnL>=0?C.green:C.red,fontWeight:'700'}}>{fmtP(totalPnL)}</span></span>
+            </div>
+          </div>
+          {positionsContent}
+        </div>
+      </div>
+      {showOrderDrawer&&(<>
+        <div onClick={()=>setShowOrderDrawer(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:90}}/>
+        <div style={{position:'fixed',bottom:'56px',left:0,right:0,background:C.panel,border:`1px solid ${C.border2}`,borderRadius:'16px 16px 0 0',zIndex:100,maxHeight:'85vh',display:'flex',flexDirection:'column'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',borderBottom:`1px solid ${C.border}`}}>
+            <div style={{display:'flex',alignItems:'center',gap:'8px'}}><SymbolLogo symbol={selectedSymbol.symbol} size={22}/><span style={{color:C.text,fontWeight:'700',fontSize:'14px'}}>Place Order · {selectedSymbol.symbol}</span></div>
+            <button onClick={()=>setShowOrderDrawer(false)} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,display:'flex'}}><X size={18}/></button>
+          </div>
+          {orderPanelContent}
+        </div>
+      </>)}
+      <div style={{height:'56px',background:C.panel,borderTop:`1px solid ${C.border}`,display:'flex',alignItems:'center',flexShrink:0,zIndex:50}}>
+        <button onClick={()=>{setMobileView('chart');setShowOrderDrawer(false);}} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',background:'none',border:'none',cursor:'pointer',padding:'8px'}}>
+          <BarChart2 size={18} color={mobileView==='chart'?C.accent:C.muted}/>
+          <span style={{fontSize:'9px',color:mobileView==='chart'?C.accent:C.muted,fontWeight:'600',fontFamily:'Inter,sans-serif'}}>Chart</span>
+        </button>
+        <div style={{flex:1,display:'flex',justifyContent:'center'}}>
+          <button onClick={()=>setShowOrderDrawer(!showOrderDrawer)} style={{width:'48px',height:'48px',background:showOrderDrawer?C.panel2:'linear-gradient(135deg,#2962FF,#00B8D9)',border:'none',borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 16px rgba(41,98,255,0.3)',transform:'translateY(-8px)'}}>
+            {showOrderDrawer?<X size={20} color="white"/>:<TrendingUp size={20} color="white"/>}
+          </button>
+        </div>
+        <button onClick={()=>{setMobileView('positions');setShowOrderDrawer(false);}} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',background:'none',border:'none',cursor:'pointer',padding:'8px',position:'relative'}}>
+          <div style={{position:'relative'}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={mobileView==='positions'?C.accent:C.muted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            {positions.length>0&&<div style={{position:'absolute',top:'-4px',right:'-6px',background:C.accent,borderRadius:'10px',width:'14px',height:'14px',display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:'8px',color:'white',fontWeight:'700'}}>{positions.length}</span></div>}
+          </div>
+          <span style={{fontSize:'9px',color:mobileView==='positions'?C.accent:C.muted,fontWeight:'600',fontFamily:'Inter,sans-serif'}}>Positions</span>
+        </button>
+      </div>
+    </div>
+  );}
+
+  return(
+    <div style={{height:'100vh',display:'flex',flexDirection:'column',background:C.bg,fontFamily:"'Inter',sans-serif",overflow:'hidden',color:C.text}}>
+      <div style={{height:'46px',background:C.panel,borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',padding:'0 8px',gap:'4px',flexShrink:0,zIndex:20}}>
+        <div style={{display:'flex',alignItems:'center',gap:'7px',paddingRight:'8px',borderRight:`1px solid ${C.border}`,marginRight:'4px'}}>
+          <div style={{width:'22px',height:'22px',background:'linear-gradient(135deg,#2962FF,#00B8D9)',borderRadius:'5px',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <svg width="11" height="11" viewBox="0 0 18 18" fill="none"><polyline points="2,12 6,7 10,10 16,4" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </div>
+          <span style={{color:C.text,fontWeight:'700',fontSize:'13px',letterSpacing:'-0.3px'}}>TradeScope</span>
+        </div>
+        <div ref={symbolDropdownRef} style={{position:'relative'}}>
+          <button onClick={()=>setShowSymbols(!showSymbols)} style={{display:'flex',alignItems:'center',gap:'7px',background:showSymbols?C.panel2:'transparent',border:`1px solid ${showSymbols?C.border2:'transparent'}`,borderRadius:'4px',padding:'4px 8px',color:C.text,cursor:'pointer',fontSize:'13px',fontWeight:'700',fontFamily:'Inter,sans-serif'}}>
+            <SymbolLogo symbol={selectedSymbol.symbol} size={18}/>
+            {selectedSymbol.symbol}
+            <ChevronDown size={11} color={C.muted}/>
+          </button>
+          {showSymbols&&(
+            <div style={{position:'absolute',top:'36px',left:0,background:C.panel,border:`1px solid ${C.border2}`,borderRadius:'8px',width:'290px',zIndex:300,boxShadow:'0 8px 32px rgba(0,0,0,0.5)'}}>
+              <div style={{padding:'8px',borderBottom:`1px solid ${C.border}`}}>
+                <div style={{display:'flex',alignItems:'center',gap:'8px',background:C.bg,borderRadius:'6px',padding:'7px 10px'}}>
+                  <Search size={13} color={C.muted}/>
+                  <input value={symbolSearch} onChange={e=>handleSymbolSearch(e.target.value)} placeholder="Search any symbol..." autoFocus style={{background:'none',border:'none',color:C.text,fontSize:'13px',outline:'none',width:'100%',fontFamily:'Inter,sans-serif'}}/>
+                  {symbolSearch&&<button onClick={()=>{setSymbolSearch('');setSearchResults([]);}} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,padding:0,display:'flex'}}><X size={11}/></button>}
+                </div>
+              </div>
+              <div style={{maxHeight:'320px',overflowY:'auto'}}>
+                {searchLoading&&<div style={{padding:'16px',textAlign:'center',color:C.muted,fontSize:'12px'}}>Searching...</div>}
+                {!searchLoading&&symbolSearch&&searchResults.length===0&&<div style={{padding:'16px',textAlign:'center',color:C.muted,fontSize:'12px'}}>No results found</div>}
+                {!symbolSearch&&(<>
+                  <div style={{padding:'6px 12px',fontSize:'10px',fontWeight:'700',color:C.muted,textTransform:'uppercase',letterSpacing:'1px'}}>Popular</div>
+                  {DEFAULT_SYMBOLS.map(sym=>(
+                    <button key={sym.symbol} onClick={()=>{setSelectedSymbol(sym);setShowSymbols(false);setSymbolSearch('');}} style={{width:'100%',display:'flex',alignItems:'center',gap:'10px',padding:'8px 12px',background:selectedSymbol.symbol===sym.symbol?C.accentBg:'transparent',border:'none',borderBottom:`1px solid ${C.border}`,cursor:'pointer',fontFamily:'Inter,sans-serif'}}>
+                      <SymbolLogo symbol={sym.symbol} size={22}/>
+                      <div style={{flex:1,textAlign:'left'}}>
+                        <div style={{fontSize:'12px',fontWeight:'700',color:selectedSymbol.symbol===sym.symbol?C.accent:C.text}}>{sym.symbol}</div>
+                        <div style={{fontSize:'10px',color:C.muted}}>{sym.label}</div>
                       </div>
-                    </td>
-                  </tr>
+                      <span style={{fontSize:'11px',fontWeight:'600',color:C.muted,fontFamily:'monospace'}}>{livePrices[sym.symbol]?fmt(livePrices[sym.symbol],5):sym.change}</span>
+                    </button>
+                  ))}
+                </>)}
+                {searchResults.map(sym=>(
+                  <button key={sym.symbol} onClick={()=>{setSelectedSymbol(sym);setShowSymbols(false);setSymbolSearch('');setSearchResults([]);}} style={{width:'100%',display:'flex',alignItems:'center',gap:'10px',padding:'8px 12px',background:'transparent',border:'none',borderBottom:`1px solid ${C.border}`,cursor:'pointer',fontFamily:'Inter,sans-serif'}}>
+                    <SymbolLogo symbol={sym.symbol} size={22}/>
+                    <div style={{flex:1,textAlign:'left'}}>
+                      <div style={{fontSize:'12px',fontWeight:'700',color:C.text}}>{sym.symbol}</div>
+                      <div style={{fontSize:'10px',color:C.muted,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'160px'}}>{sym.label}</div>
+                    </div>
+                  </button>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {/* Modal */}
-      {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'white', borderRadius: '14px', width: '560px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A' }}>{editItem ? 'Edit Trading Account' : 'Add Trading Account'}</div>
-              <button onClick={() => { setShowModal(false); setEditItem(null); setForm(empty); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} color="#94A3B8" /></button>
-            </div>
-            <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto' }}>
-              <div>
-                <label style={labelStyle}>Client</label>
-                <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))} style={inputStyle}>
-                  <option value="">No client assigned</option>
-                  {clients.map(c => <option key={c.id} value={c.id}>{c.first_name} {c.last_name} — {c.email}</option>)}
-                </select>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div><label style={labelStyle}>Account Number *</label><input value={form.account_number} onChange={e => setForm(f => ({ ...f, account_number: e.target.value }))} placeholder="e.g. 100001" style={inputStyle} /></div>
-                <div><label style={labelStyle}>Platform</label><select value={form.platform} onChange={e => setForm(f => ({ ...f, platform: e.target.value }))} style={inputStyle}><option>MT4</option><option>MT5</option><option>cTrader</option></select></div>
-                <div><label style={labelStyle}>Account Type</label><select value={form.account_type} onChange={e => setForm(f => ({ ...f, account_type: e.target.value }))} style={inputStyle}><option value="standard">Standard</option><option value="pro">Pro</option><option value="vip">VIP</option><option value="demo">Demo</option><option value="islamic">Islamic</option></select></div>
-                <div><label style={labelStyle}>Currency</label><select value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))} style={inputStyle}>{['USD','EUR','GBP','CHF','AUD','JPY'].map(c => <option key={c}>{c}</option>)}</select></div>
-                <div><label style={labelStyle}>Balance</label><input type="number" value={form.balance} onChange={e => setForm(f => ({ ...f, balance: e.target.value }))} placeholder="0.00" style={inputStyle} /></div>
-                <div><label style={labelStyle}>Equity</label><input type="number" value={form.equity} onChange={e => setForm(f => ({ ...f, equity: e.target.value }))} placeholder="0.00" style={inputStyle} /></div>
-                <div><label style={labelStyle}>Margin</label><input type="number" value={form.margin} onChange={e => setForm(f => ({ ...f, margin: e.target.value }))} placeholder="0.00" style={inputStyle} /></div>
-                <div><label style={labelStyle}>Free Margin</label><input type="number" value={form.free_margin} onChange={e => setForm(f => ({ ...f, free_margin: e.target.value }))} placeholder="0.00" style={inputStyle} /></div>
-                <div><label style={labelStyle}>Leverage</label><select value={form.leverage} onChange={e => setForm(f => ({ ...f, leverage: e.target.value }))} style={inputStyle}>{[1,2,5,10,25,50,100,200,300,400,500].map(l => <option key={l} value={l}>1:{l}</option>)}</select></div>
-                <div><label style={labelStyle}>Status</label><select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={inputStyle}><option value="active">Active</option><option value="inactive">Inactive</option><option value="suspended">Suspended</option></select></div>
               </div>
             </div>
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #E2E8F0', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button onClick={() => { setShowModal(false); setEditItem(null); setForm(empty); }} style={{ padding: '9px 20px', border: '1px solid #E2E8F0', borderRadius: '8px', background: 'white', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>Cancel</button>
-              <button onClick={save} disabled={!form.account_number}
-                style={{ padding: '9px 20px', background: !form.account_number ? '#E2E8F0' : 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: !form.account_number ? '#94A3B8' : 'white', cursor: !form.account_number ? 'not-allowed' : 'pointer' }}>
-                {editItem ? 'Save Changes' : 'Add Account'}
+          )}
+        </div>
+        <div ref={intervalDropdownRef} style={{position:'relative',marginLeft:'4px'}}>
+          <button onClick={()=>setShowIntervals(!showIntervals)} style={{display:'flex',alignItems:'center',gap:'5px',padding:'4px 10px',background:showIntervals?C.accentBg:'transparent',border:`1px solid ${showIntervals?C.accent:'transparent'}`,borderRadius:'4px',color:C.accent,fontSize:'13px',fontWeight:'700',cursor:'pointer',fontFamily:'Inter,sans-serif',letterSpacing:'0.2px'}}>
+            {activeLabel}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6,9 12,15 18,9"/></svg>
+          </button>
+          {showIntervals&&(
+            <div style={{position:'absolute',top:'32px',left:0,background:C.panel,border:`1px solid ${C.border2}`,borderRadius:'8px',zIndex:300,boxShadow:'0 8px 32px rgba(0,0,0,0.5)',minWidth:'160px',padding:'6px'}}>
+              {INTERVAL_GROUPS.map(group=>(
+                <div key={group.label}>
+                  <div style={{fontSize:'9px',fontWeight:'700',color:C.muted,textTransform:'uppercase',letterSpacing:'1px',padding:'4px 8px 2px'}}>{group.label}</div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:'3px',padding:'2px 4px 8px'}}>
+                    {group.options.map(opt=>{
+                      const iv=INTERVALS.find(i=>i.label===opt);
+                      if(!iv) return null;
+                      return(<button key={iv.value} onClick={()=>{setActiveInterval(iv.value);setShowIntervals(false);}} style={{padding:'4px 10px',background:activeInterval===iv.value?C.accent:'transparent',border:`1px solid ${activeInterval===iv.value?C.accent:C.border2}`,borderRadius:'4px',color:activeInterval===iv.value?'white':C.text,fontSize:'11px',fontWeight:'600',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>{iv.label}</button>);
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{width:'1px',height:'20px',background:C.border2,margin:'0 6px'}}/>
+        <button style={{display:'flex',alignItems:'center',gap:'5px',padding:'4px 10px',background:'transparent',border:'1px solid transparent',borderRadius:'4px',color:C.muted,fontSize:'12px',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Indicators
+        </button>
+        <button onClick={()=>{setDrawings(prev=>prev.slice(0,-1));setSelectedDrawing(null);}} disabled={drawings.length===0}
+          title="Undo (Ctrl+Z)"
+          style={{display:'flex',alignItems:'center',gap:'4px',padding:'4px 8px',background:'transparent',border:'1px solid transparent',borderRadius:'4px',color:drawings.length===0?C.muted2:C.muted,fontSize:'11px',cursor:drawings.length===0?'not-allowed':'pointer',fontFamily:'Inter,sans-serif',transition:'color 0.15s'}}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 7v6h6"/><path d="M3 13C5 8 9 5 14 5c4 0 7 2.5 8 6"/></svg>
+          Undo
+        </button>
+        {selectedDrawing!==null&&(
+          <button onClick={()=>{setDrawings(prev=>prev.filter((_,i)=>i!==selectedDrawing));setSelectedDrawing(null);}}
+            title="Delete selected"
+            style={{display:'flex',alignItems:'center',gap:'4px',padding:'4px 8px',background:C.redBg,border:`1px solid rgba(239,83,80,0.3)`,borderRadius:'4px',color:C.red,fontSize:'11px',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3,6 5,6 21,6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg>
+            Delete
+          </button>
+        )}
+        <div style={{marginLeft:'4px',display:'flex',alignItems:'baseline',gap:'6px'}}>
+          <span style={{fontSize:'15px',fontWeight:'700',color:priceChange>=0?C.green:C.red,fontFamily:'monospace'}}>{price?fmt(price,decimals):'—'}</span>
+          <span style={{fontSize:'11px',color:priceChange>=0?C.green:C.red}}>{priceChange>=0?'▲':'▼'} {Math.abs(priceChange).toFixed(2)}%</span>
+        </div>
+        <div style={{flex:1}}/>
+        <div style={{display:'flex',gap:'20px',alignItems:'center',marginRight:'8px'}}>
+          {[['Balance',`$${(trader?.balance||0).toFixed(2)}`],['P&L',fmtP(totalPnL),totalPnL>=0?C.green:C.red],['Equity',`$${((trader?.balance||0)+totalPnL).toFixed(2)}`]].map(([l,v,c])=>(
+            <div key={l} style={{textAlign:'right'}}>
+              <div style={{fontSize:'9px',color:C.muted,textTransform:'uppercase',letterSpacing:'0.5px'}}>{l}</div>
+              <div style={{fontSize:'12px',fontWeight:'700',color:c||C.text,fontFamily:'monospace'}}>{v}</div>
+            </div>
+          ))}
+        </div>
+        <button onClick={signOut} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,padding:'4px',display:'flex'}} title="Sign out"><LogOut size={14}/></button>
+      </div>
+      <div style={{flex:1,display:'flex',overflow:'hidden'}}>
+        <div style={{width:'48px',background:C.panel,borderRight:`1px solid ${C.border}`,display:'flex',flexDirection:'column',alignItems:'center',padding:'8px 0',gap:'1px',flexShrink:0,overflowY:'auto'}}>
+          {LEFT_TOOLS.map((tool,i)=>{
+            const prev=i>0?LEFT_TOOLS[i-1].group:tool.group;
+            return(<div key={tool.title} style={{width:'100%',display:'flex',flexDirection:'column',alignItems:'center'}}>
+              {i>0&&tool.group!==prev&&<div style={{width:'28px',height:'1px',background:C.border2,margin:'4px 0'}}/>}
+              <button onClick={()=>setActiveTool(tool.title)} title={tool.title} style={{width:'36px',height:'36px',background:activeTool===tool.title?C.accentBg:'transparent',border:'none',borderRadius:'6px',color:activeTool===tool.title?C.accent:C.muted,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.15s'}}>
+                {tool.icon}
               </button>
+            </div>);
+          })}
+        </div>
+        <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+          <div style={{flex:1,position:'relative'}}>
+            <div ref={chartContainerRef} style={{width:'100%',height:'100%'}}/>
+            <canvas
+              ref={canvasRef}
+              onMouseDown={handleCanvasMouseDown}
+              onMouseMove={handleCanvasMouseMove}
+              onMouseUp={handleCanvasMouseUp}
+              style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',cursor:canvasCursor(),pointerEvents:activeTool==='Crosshair'||activeTool==='Cursor'?'none':'all',zIndex:10}}
+            />
+            {activeTool==='Cursor'&&(
+              <div
+                onClick={handleCanvasMouseDown}
+                style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',cursor:'default',zIndex:11,background:'transparent'}}
+              />
+            )}
+          </div>
+          <div style={{height:'200px',background:C.panel,borderTop:`1px solid ${C.border}`,flexShrink:0,display:'flex',flexDirection:'column'}}>
+            <div style={{display:'flex',borderBottom:`1px solid ${C.border}`,flexShrink:0,alignItems:'center',background:C.panel}}>
+              {['positions','history'].map(t=>(<button key={t} onClick={()=>setTab(t)} style={{padding:'8px 16px',background:'none',border:'none',borderBottom:tab===t?`2px solid ${C.accent}`:'2px solid transparent',color:tab===t?C.text:C.muted,fontSize:'11px',fontWeight:'600',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>{t==='positions'?`Open Positions (${positions.length})`:`History (${history.length})`}</button>))}
+              <div style={{marginLeft:'auto',paddingRight:'16px'}}>
+                <span style={{fontSize:'11px',color:C.muted}}>P&L: <span style={{color:totalPnL>=0?C.green:C.red,fontWeight:'700'}}>{fmtP(totalPnL)}</span></span>
+              </div>
+            </div>
+            {positionsContent}
+          </div>
+        </div>
+        <div style={{width:'240px',background:C.panel,borderLeft:`1px solid ${C.border}`,display:'flex',flexDirection:'column',flexShrink:0,overflow:'hidden'}}>
+          {orderPanelContent}
+        </div>
+        <div style={{width:'220px',background:C.panel,borderLeft:`1px solid ${C.border}`,display:'flex',flexDirection:'column',flexShrink:0}}>
+          <div style={{padding:'10px 12px',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <span style={{fontSize:'13px',fontWeight:'700',color:C.text}}>Watchlist</span>
+            <Plus size={14} color={C.muted} style={{cursor:'pointer'}}/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr auto auto',padding:'5px 10px',gap:'4px',borderBottom:`1px solid ${C.border}`}}>
+            {['Symbol','Last','Chg%'].map(h=>(<span key={h} style={{fontSize:'9px',color:C.muted,fontWeight:'700',textTransform:'uppercase',letterSpacing:'0.5px',textAlign:h!=='Symbol'?'right':'left'}}>{h}</span>))}
+          </div>
+          <div style={{flex:1,overflowY:'auto'}}>
+            {['Forex','Crypto','Stocks','Indices'].map(group=>{
+              const syms=DEFAULT_SYMBOLS.filter(s=>s.type===group);
+              if(!syms.length) return null;
+              return(<div key={group}>
+                <div style={{padding:'5px 10px',fontSize:'9px',fontWeight:'700',color:C.muted,textTransform:'uppercase',letterSpacing:'1px',background:C.panel2,borderBottom:`1px solid ${C.border}`}}>{group}</div>
+                {syms.map(sym=>{
+                  const lp=livePrices[sym.symbol];
+                  return(<button key={sym.symbol} onClick={()=>setSelectedSymbol(sym)} style={{width:'100%',display:'grid',gridTemplateColumns:'1fr auto auto',padding:'6px 10px',gap:'6px',alignItems:'center',background:selectedSymbol.symbol===sym.symbol?C.accentBg:'transparent',border:'none',borderBottom:`1px solid ${C.border}`,cursor:'pointer',fontFamily:'Inter,sans-serif'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'7px',overflow:'hidden'}}>
+                      <SymbolLogo symbol={sym.symbol} size={20}/>
+                      <span style={{fontSize:'11px',fontWeight:'600',color:selectedSymbol.symbol===sym.symbol?C.accent:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{sym.symbol}</span>
+                    </div>
+                    <span style={{fontSize:'10px',color:C.text,fontFamily:'monospace',textAlign:'right'}}>{lp?fmt(lp,SYMBOL_META[sym.symbol]?.polyType==='stocks'?2:sym.symbol.includes('JPY')?3:5):'—'}</span>
+                    <span style={{fontSize:'10px',fontWeight:'600',textAlign:'right',minWidth:'44px',fontFamily:'monospace',color:(()=>{const op=openPrices[sym.symbol];if(!lp||!op) return C.muted;return ((lp-op)/op)*100>=0?C.green:C.red;})()}}>
+                      {(()=>{const op=openPrices[sym.symbol];if(!lp||!op) return '—';const pct=((lp-op)/op)*100;return (pct>=0?'+':'')+pct.toFixed(2)+'%';})()}
+                    </span>
+                  </button>);
+                })}
+              </div>);
+            })}
+          </div>
+          <div style={{borderTop:`1px solid ${C.border}`,background:C.bg,overflowY:'auto',maxHeight:'340px'}}>
+            <div style={{padding:'10px 12px 8px'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'6px'}}>
+                <SymbolLogo symbol={selectedSymbol.symbol} size={26}/>
+                <div>
+                  <div style={{fontSize:'13px',fontWeight:'700',color:C.text}}>{selectedSymbol.symbol}</div>
+                  <div style={{fontSize:'10px',color:C.muted}}>{selectedSymbol.label}</div>
+                </div>
+              </div>
+              <div style={{fontSize:'20px',fontWeight:'700',color:priceChange>=0?C.green:C.red,fontFamily:'monospace',lineHeight:1,letterSpacing:'-0.5px'}}>{price?fmt(price,decimals):'—'}</div>
+              <div style={{fontSize:'11px',color:priceChange>=0?C.green:C.red,marginTop:'2px',fontWeight:'600'}}>{priceChange>=0?'+':''}{priceChange.toFixed(2)}%</div>
+              {(()=>{
+                const now=new Date();
+                const utcH=now.getUTCHours();
+                const utcMin=now.getUTCMinutes();
+                const utcDay=now.getUTCDay(); // 0=Sun,6=Sat
+                const utcMins=utcH*60+utcMin;
+                const type=SYMBOL_META[selectedSymbol.symbol]?.polyType||'forex';
+                let isOpen=false;
+                if(type==='crypto') isOpen=true;
+                else if(type==='forex'){
+                  // Forex: Sun 22:00 UTC – Fri 22:00 UTC
+                  if(utcDay===0&&utcH>=22) isOpen=true;
+                  else if(utcDay>=1&&utcDay<=4) isOpen=true;
+                  else if(utcDay===5&&utcH<22) isOpen=true;
+                } else {
+                  // Stocks/Indices: Mon-Fri 13:30–20:00 UTC (NYSE/NASDAQ)
+                  if(utcDay>=1&&utcDay<=5&&utcMins>=810&&utcMins<1200) isOpen=true;
+                }
+                return(
+                  <div style={{display:'flex',alignItems:'center',gap:'5px',marginTop:'6px'}}>
+                    <div style={{width:'6px',height:'6px',borderRadius:'50%',background:isOpen?C.green:C.red,boxShadow:isOpen?`0 0 4px ${C.green}`:'none'}}/>
+                    <span style={{fontSize:'10px',color:isOpen?C.green:C.muted,fontWeight:'500'}}>{isOpen?'Market open':'Market closed'}</span>
+                  </div>
+                );
+              })()}
+            </div>
+            <div style={{padding:'0 12px 12px'}}>
+              <div style={{fontSize:'10px',fontWeight:'700',color:C.text,textTransform:'uppercase',letterSpacing:'0.7px',marginBottom:'8px'}}>Performance</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'5px'}}>
+                {[{label:'1D',value:priceChange},{label:'1W',value:null},{label:'1M',value:null},{label:'3M',value:null},{label:'6M',value:null},{label:'1Y',value:null}].map(({label,value})=>(
+                  <div key={label} style={{background:value==null?C.panel:value>=0?'rgba(38,166,154,0.1)':'rgba(239,83,80,0.1)',borderRadius:'5px',padding:'5px 6px',textAlign:'center',border:`1px solid ${value==null?C.border:value>=0?'rgba(38,166,154,0.25)':'rgba(239,83,80,0.25)'}`}}>
+                    <div style={{fontSize:'9px',color:C.muted,marginBottom:'2px',fontWeight:'600'}}>{label}</div>
+                    <div style={{fontSize:'11px',fontWeight:'700',color:value==null?C.muted2:value>=0?C.green:C.red}}>{value==null?'—':`${value>=0?'+':''}${Number(value).toFixed(2)}%`}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
