@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, UserPlus, ChevronRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { cachedQuery } from '../lib/cache';
 
 const kycBadge = (status) => {
   const styles = { approved: { background: '#DCFCE7', color: '#166534' }, under_review: { background: '#FEF9C3', color: '#854D0E' }, pending: { background: '#F1F5F9', color: '#475569' }, rejected: { background: '#FEE2E2', color: '#991B1B' } };
@@ -25,8 +26,8 @@ export default function ClientList() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from('clients').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-      setClients(data || []);
+    cachedQuery('clients', () => supabase.from('clients').select('*').order('created_at', { ascending: false }).then(r => r.data || [])).then(data => {
+      setClients(data);
       setLoading(false);
     });
   }, []);
