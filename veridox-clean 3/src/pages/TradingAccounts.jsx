@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Download } from 'lucide-react';
 import { tradescope } from '../lib/tradescope';
 
@@ -11,6 +12,7 @@ function formatMoney(v) {
 }
 
 export default function TradingAccounts() {
+  const navigate = useNavigate();
   const [accounts, setAccounts] = useState([]);
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -124,7 +126,8 @@ export default function TradingAccounts() {
               return (
                 <tr
                   key={a.id}
-                  style={{ borderBottom: idx < accounts.length - 1 ? '1px solid #F3F4F6' : 'none', background: '#fff' }}
+                  onClick={() => navigate(`/trading-accounts/${a.id}`)}
+                  style={{ borderBottom: idx < accounts.length - 1 ? '1px solid #F3F4F6' : 'none', background: '#fff', cursor: 'pointer' }}
                   onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
                   onMouseLeave={e => e.currentTarget.style.background = '#fff'}
                 >
