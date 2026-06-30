@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 
 const DEMO_EMAIL = 'demo@crmveridox.com';
 const DEMO_PASSWORD = 'Demo2024!';
@@ -12,6 +13,15 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
+  const [forgotMsg, setForgotMsg] = useState('');
+
+  const handleForgot = async () => {
+    setForgotMsg(''); setError('');
+    if (!email) { setError('Type your email above first, then tap "Forgot password".'); return; }
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '/reset-password' });
+    if (err) setError(err.message);
+    else setForgotMsg('Reset link sent — check your email.');
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -100,6 +110,10 @@ export default function Login() {
           <label style={s.label}>PASSWORD</label>
           <input type="password" value={password} onChange={e => setPassword(e.target.value)} style={s.input} placeholder="••••••••" required onFocus={e => e.target.style.borderColor = '#6366F1'} onBlur={e => e.target.style.borderColor = '#334155'} />
           <button type="submit" style={s.btn} disabled={loggingIn}>{loggingIn ? 'Signing in...' : 'Sign in to Veridox'}</button>
+          <div style={{ textAlign: 'center', marginTop: '14px' }}>
+            <span onClick={handleForgot} style={{ color: '#94A3B8', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}>Forgot password?</span>
+          </div>
+          {forgotMsg && <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: '8px', padding: '10px 14px', color: '#4ADE80', fontSize: '12px', marginTop: '12px', textAlign: 'center' }}>{forgotMsg}</div>}
         </form>
 
         <div style={{ marginTop: '24px', padding: '12px', background: '#0F172A', borderRadius: '8px', border: '1px solid #1E293B' }}>
