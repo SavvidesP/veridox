@@ -18,7 +18,7 @@ export default function Login() {
   const handleForgot = async () => {
     setForgotMsg(''); setError('');
     if (!email) { setError('Type your email above first, then tap "Forgot password".'); return; }
-    const { error: err } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '/reset-password' });
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin + '/reset-password' });
     if (err) setError(err.message);
     else setForgotMsg('Reset link sent — check your email.');
   };
@@ -27,7 +27,7 @@ export default function Login() {
     e.preventDefault();
     setError('');
     setLoggingIn(true);
-    const { error: err } = await signIn(email, password);
+    const { error: err } = await signIn(email.trim(), password);
     if (err) {
       setError('Invalid email or password.');
       setLoggingIn(false);
@@ -106,7 +106,7 @@ export default function Login() {
             </div>
           )}
           <label style={s.label}>EMAIL ADDRESS</label>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={s.input} placeholder="you@company.com" required onFocus={e => e.target.style.borderColor = '#6366F1'} onBlur={e => e.target.style.borderColor = '#334155'} />
+          <input type="email" value={email} onChange={e => setEmail(e.target.value.replace(/\s/g, ''))} style={s.input} placeholder="you@company.com" required onFocus={e => e.target.style.borderColor = '#6366F1'} onBlur={e => e.target.style.borderColor = '#334155'} />
           <label style={s.label}>PASSWORD</label>
           <input type="password" value={password} onChange={e => setPassword(e.target.value)} style={s.input} placeholder="••••••••" required onFocus={e => e.target.style.borderColor = '#6366F1'} onBlur={e => e.target.style.borderColor = '#334155'} />
           <button type="submit" style={s.btn} disabled={loggingIn}>{loggingIn ? 'Signing in...' : 'Sign in to Veridox'}</button>
