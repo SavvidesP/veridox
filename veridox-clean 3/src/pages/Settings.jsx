@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import { Users, Plus, Trash2, X, Copy, Check, ChevronDown } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -43,6 +44,7 @@ function CopyRow({ label, value }) {
 
 export default function Settings() {
   const { user, profile } = useAuth();
+  const navigate = useNavigate();
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
@@ -149,7 +151,7 @@ export default function Settings() {
             ) : members.length === 0 ? (
               <div style={{ color: '#9CA3AF', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No team members yet. Invite your first one.</div>
             ) : members.map(member => (
-              <div key={member.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '12px 14px', borderRadius: '8px', border: '1px solid #F3F4F6', background: '#F9FAFB' }}>
+              <div key={member.id} onClick={() => navigate(`/team/${member.id}`)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '12px 14px', borderRadius: '8px', border: '1px solid #F3F4F6', background: '#F9FAFB', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = '#F3F4F6'} onMouseLeave={e => e.currentTarget.style.background = '#F9FAFB'}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
                   <div style={{ width: '34px', height: '34px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: '700', flexShrink: 0 }}>{initials(member)}</div>
                   <div style={{ minWidth: 0 }}>
@@ -157,7 +159,7 @@ export default function Settings() {
                     <div style={{ color: '#9CA3AF', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{member.email}{member.username ? ` · @${member.username}` : ''}</div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                   {/* Role toggle */}
                   <div style={{ position: 'relative' }}>
                     <select value={member.role || 'agent'} onChange={e => changeRole(member, e.target.value)}
