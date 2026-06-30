@@ -55,6 +55,9 @@ const navGroups = [
 
 const allNavItems = navGroups.flatMap(g => g.items);
 
+// Panels restricted to admins — agents never see these in nav and can't open them by URL (see AdminRoute in App.jsx).
+const ADMIN_ONLY = new Set(['/routing', '/cascading', '/disputes', '/fraud-rules', '/bonus-management', '/ib-affiliate', '/financial-reports', '/integrations', '/add-client', '/settings']);
+
 const mobileNavItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Home' },
   { to: '/clients', icon: Users, label: 'Clients' },
@@ -139,6 +142,15 @@ export default function Layout({ children }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [openGroups, setOpenGroups] = useState(['Payments']);
 
+  // Role-based nav: agents never see admin-only panels. Empty groups are dropped.
+  const isAdmin = profile?.role === 'admin';
+  const canSee = (to) => isAdmin || !ADMIN_ONLY.has(to);
+  const visibleGroups = navGroups
+    .map(g => ({ ...g, items: g.items.filter(i => canSee(i.to)) }))
+    .filter(g => g.items.length > 0);
+  const visibleAllItems = allNavItems.filter(i => canSee(i.to));
+  const visibleMobileItems = mobileNavItems.filter(i => canSee(i.to));
+
   useEffect(() => {
     navGroups.forEach(group => {
       if (!group.alwaysOpen && group.items.some(item => location.pathname === item.to)) {
@@ -200,7 +212,7 @@ export default function Layout({ children }) {
               </button>
             </div>
             <nav style={{ flex: 1, padding: '12px', overflowY: 'auto' }}>
-              {allNavItems.map(({ to, icon: Icon, label }) => (
+              {visibleAllItems.map(({ to, icon: Icon, label }) => (
                 <NavLink key={to} to={to} onClick={() => setMobileMenuOpen(false)}
                   style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 14px', borderRadius: '8px', marginBottom: '2px', textDecoration: 'none', fontSize: '15px', fontWeight: isActive ? '600' : '400', color: isActive ? '#111827' : '#6B7280', background: isActive ? '#F3F4F6' : 'transparent' })}>
                   <Icon size={18} />
@@ -228,7 +240,7 @@ export default function Layout({ children }) {
         </main>
 
         <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'white', borderTop: '1px solid #E5E7EB', display: 'flex', zIndex: 100 }}>
-          {mobileNavItems.map(({ to, icon: Icon, label }) => (
+          {visibleMobileItems.map(({ to, icon: Icon, label }) => (
             <NavLink key={to} to={to}
               style={({ isActive }) => ({ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', padding: '10px 4px', textDecoration: 'none', color: isActive ? '#111827' : '#9CA3AF', borderTop: isActive ? '2px solid #111827' : '2px solid transparent' })}>
               <Icon size={20} />
@@ -260,7 +272,7 @@ export default function Layout({ children }) {
 
         {/* Nav */}
         <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto' }}>
-          {navGroups.map(group => (
+          {visibleGroups.map(group => (
             <NavGroup key={group.label} group={group} openGroups={openGroups} setOpenGroups={setOpenGroups} />
           ))}
         </nav>
