@@ -198,7 +198,7 @@ export default function ClientProfile() {
         </div>
 
         {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #F3F4F6' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #F3F4F6' }}>
           {[
             { label: 'Transactions', value: transactions.length, icon: ArrowLeftRight, color: '#6366F1', bg: '#EEF2FF' },
             { label: 'Total Volume', value: `$${formatAmount(totalVolume)}`, icon: CheckCircle, color: '#166534', bg: '#DCFCE7' },
@@ -229,7 +229,7 @@ export default function ClientProfile() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '20px', background: '#F3F4F6', padding: '4px', borderRadius: '10px', width: 'fit-content' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '20px', background: '#F3F4F6', padding: '4px', borderRadius: '10px', width: 'fit-content', maxWidth: '100%' }}>
         {tabs.map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             style={{ padding: '7px 16px', borderRadius: '7px', border: 'none', fontSize: '13px', fontWeight: '600', cursor: 'pointer', background: activeTab === tab ? 'white' : 'transparent', color: activeTab === tab ? '#111827' : '#6B7280', boxShadow: activeTab === tab ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', transition: 'all 0.15s' }}>
@@ -409,7 +409,7 @@ export default function ClientProfile() {
             ) : (
               <>
                 {/* Account summary */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', marginBottom: '20px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '10px', marginBottom: '20px' }}>
                   {[
                     { label: 'Balance', value: fmtUsd(tsAccount.balance) },
                     { label: 'Equity', value: fmtUsd(tsAccount.equity) },
