@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, FileText, Clock, Mail, Phone, Globe, Building, MapPin, ArrowLeftRight, ShieldAlert, User, CheckCircle, TrendingUp, TrendingDown, Activity as ActivityIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { tradescope } from '../lib/tradescope';
+import { invalidate } from '../lib/cache';
 import { useAuth } from '../contexts/AuthContext';
 
 const statusConfig = {
@@ -79,12 +80,16 @@ export default function ClientProfile() {
       if (c.data) {
         const name = `${c.data.first_name} ${c.data.last_name}`;
         Promise.all([
+          // Match transactions to THIS client by exact first+last name (AND, case-insensitive).
+          // The transactions table has no client_id FK, so name is the only link — but an
+          // exact AND match avoids the old OR-partial bug that pulled in unrelated people.
           supabase.from('transactions').select('*')
-            .or(`first_name.ilike.%${c.data.first_name}%,last_name.ilike.%${c.data.last_name}%`)
+            .ilike('first_name', c.data.first_name || '')
+            .ilike('last_name', c.data.last_name || '')
             .order('created_date', { ascending: false })
-            .limit(20),
+            .limit(50),
           supabase.from('disputes').select('*')
-            .ilike('client_name', `%${c.data.first_name}%`)
+            .ilike('client_name', `${c.data.first_name || ''} ${c.data.last_name || ''}`.trim())
             .order('created_at', { ascending: false }),
         ]).then(([t, disp]) => {
           setTransactions(t.data || []);
@@ -152,6 +157,7 @@ export default function ClientProfile() {
 
   const updateStatus = async (newStatus) => {
     await supabase.from('clients').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id);
+    invalidate('clients');
     await supabase.from('activities').insert({ client_id: id, action: 'Status Changed', description: `Status updated to ${newStatus}`, created_by: user?.id });
     setClient(prev => ({ ...prev, status: newStatus }));
     setActivities(prev => [{ id: Date.now(), action: 'Status Changed', description: `Status updated to ${newStatus}`, created_at: new Date().toISOString() }, ...prev]);
