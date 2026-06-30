@@ -27,6 +27,57 @@ const ADJUSTABLE = [
 
 const fieldLabel = (k) => (ADJUSTABLE.find(f => f.key === k)?.label || k);
 
+// Editable columns on a single TradeScope trade
+const TRADE_FIELDS = [
+  { key: 'type', label: 'Type', input: 'select', options: ['buy', 'sell'] },
+  { key: 'status', label: 'Status', input: 'select', options: ['open', 'closed'] },
+  { key: 'lot_size', label: 'Lot Size', input: 'number', step: '0.01' },
+  { key: 'leverage', label: 'Leverage (1:N)', input: 'number', step: '1' },
+  { key: 'open_price', label: 'Open Price', input: 'number', step: 'any' },
+  { key: 'close_price', label: 'Close Price', input: 'number', step: 'any', nullable: true },
+  { key: 'stop_loss', label: 'Stop Loss', input: 'number', step: 'any', nullable: true },
+  { key: 'take_profit', label: 'Take Profit', input: 'number', step: 'any', nullable: true },
+  { key: 'profit', label: 'Profit ($)', input: 'number', step: 'any', nullable: true },
+  { key: 'opened_at', label: 'Opened At', input: 'datetime' },
+  { key: 'closed_at', label: 'Closed At', input: 'datetime', nullable: true },
+];
+// Account-level fields editable from the same modal (write to trader_accounts)
+const TRADE_ACCOUNT_FIELDS = [
+  { key: 'balance', label: 'Balance', input: 'number', step: 'any' },
+  { key: 'equity', label: 'Equity', input: 'number', step: 'any' },
+  { key: 'margin', label: 'Margin', input: 'number', step: 'any' },
+  { key: 'free_margin', label: 'Free Margin', input: 'number', step: 'any' },
+];
+
+// ISO ⇄ <input type="datetime-local"> helpers (local-time display, ISO storage)
+function toLocalInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso); if (isNaN(d)) return '';
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+function fromLocalInput(val) {
+  if (!val) return null;
+  const d = new Date(val); return isNaN(d) ? null : d.toISOString();
+}
+function normalizeField(field, raw) {
+  if (field.input === 'datetime') return fromLocalInput(raw);
+  if (field.input === 'select') return raw;
+  if (raw === '' || raw == null) return field.nullable ? null : 0;
+  const n = Number(raw); return isNaN(n) ? null : n;
+}
+function sameValue(a, b) {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return String(a) === String(b);
+}
+// Stored audit text → proper typed value for re-applying on revert
+function parseStored(scope, field, text) {
+  if (text == null) return null;
+  const f = (scope === 'trade' ? TRADE_FIELDS : TRADE_ACCOUNT_FIELDS).find(x => x.key === field);
+  if (!f || f.input === 'datetime' || f.input === 'select') return text;
+  const n = Number(text); return isNaN(n) ? text : n;
+}
+
 export default function TradingAccountDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -39,6 +90,10 @@ export default function TradingAccountDetail() {
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [auditMissing, setAuditMissing] = useState(false);
+  const [editTrade, setEditTrade] = useState(null);
+  const [tradeForm, setTradeForm] = useState({});
+  const [tradeSaving, setTradeSaving] = useState(false);
+  const [tradeHasOriginal, setTradeHasOriginal] = useState(false);
 
   async function loadAdjustments() {
     const { data, error } = await supabase
@@ -126,6 +181,77 @@ export default function TradingAccountDetail() {
     await loadAdjustments();
     setSaving(false);
     setShowAdjust(false);
+  }
+
+  async function openEditTrade(tr) {
+    const f = {};
+    TRADE_FIELDS.forEach(fl => { f[fl.key] = fl.input === 'datetime' ? toLocalInput(tr[fl.key]) : (tr[fl.key] ?? ''); });
+    TRADE_ACCOUNT_FIELDS.forEach(fl => { f['acct_' + fl.key] = account?.[fl.key] ?? 0; });
+    setTradeForm(f);
+    setEditTrade(tr);
+    // Can we revert? Only if this trade already has recorded adjustments (original captured).
+    const { data } = await supabase.from('trade_adjustments').select('id').eq('trade_id', tr.id).limit(1);
+    setTradeHasOriginal(!!(data && data.length));
+  }
+
+  async function saveTradeEdit() {
+    if (!editTrade) return;
+    setTradeSaving(true);
+    const tradeUpdates = {}, acctUpdates = {}, audit = [];
+    TRADE_FIELDS.forEach(fl => {
+      const nv = normalizeField(fl, tradeForm[fl.key]);
+      const ov = fl.input === 'datetime' ? (editTrade[fl.key] ? new Date(editTrade[fl.key]).toISOString() : null) : (editTrade[fl.key] ?? null);
+      if (!sameValue(nv, ov)) { tradeUpdates[fl.key] = nv; audit.push({ scope: 'trade', field: fl.key, old_value: ov == null ? null : String(ov), new_value: nv == null ? null : String(nv) }); }
+    });
+    TRADE_ACCOUNT_FIELDS.forEach(fl => {
+      const nv = normalizeField(fl, tradeForm['acct_' + fl.key]);
+      const ov = account?.[fl.key] ?? 0;
+      if (!sameValue(nv, ov)) { acctUpdates[fl.key] = nv; audit.push({ scope: 'account', field: fl.key, old_value: String(ov), new_value: nv == null ? null : String(nv) }); }
+    });
+    if (audit.length === 0) { setTradeSaving(false); setEditTrade(null); return; }
+    // 1) Write through to the client's real TradeScope account
+    if (Object.keys(tradeUpdates).length) {
+      const { error } = await tradescope.from('trades').update(tradeUpdates).eq('id', editTrade.id);
+      if (error) { setTradeSaving(false); alert('Could not update trade: ' + error.message); return; }
+    }
+    if (Object.keys(acctUpdates).length) {
+      const { error } = await tradescope.from('trader_accounts').update(acctUpdates).eq('id', id);
+      if (error) { setTradeSaving(false); alert('Could not update account: ' + error.message); return; }
+    }
+    // 2) Audit log to Veridox (graceful if the table isn't set up yet — the change still applies)
+    await supabase.from('trade_adjustments').insert(audit.map(a => ({
+      trade_id: editTrade.id, trader_account_id: id, scope: a.scope, field: a.field,
+      old_value: a.old_value, new_value: a.new_value,
+      changed_by: user?.id || null, changed_by_name: profile?.full_name || user?.email || 'Unknown',
+    })));
+    // 3) Optimistic UI (realtime + 8s poll will reconcile)
+    setTrades(prev => prev.map(t => t.id === editTrade.id ? { ...t, ...tradeUpdates } : t));
+    if (Object.keys(acctUpdates).length) setAccount(prev => ({ ...prev, ...acctUpdates }));
+    setTradeSaving(false); setEditTrade(null);
+  }
+
+  async function revertTrade() {
+    if (!editTrade) return;
+    if (!window.confirm('Revert this trade (and any related account changes) to their original values?')) return;
+    setTradeSaving(true);
+    const { data, error } = await supabase.from('trade_adjustments').select('*').eq('trade_id', editTrade.id).order('created_at', { ascending: true });
+    if (error || !data || !data.length) { setTradeSaving(false); alert('No recorded changes to revert.'); return; }
+    // Original value = earliest recorded old_value per (scope, field)
+    const orig = {};
+    data.forEach(r => { const k = r.scope + ':' + r.field; if (!(k in orig)) orig[k] = r; });
+    const tradeUpdates = {}, acctUpdates = {}, log = [];
+    Object.values(orig).forEach(r => {
+      const val = parseStored(r.scope, r.field, r.old_value);
+      const cur = r.scope === 'trade' ? editTrade[r.field] : account?.[r.field];
+      if (r.scope === 'trade') tradeUpdates[r.field] = val; else acctUpdates[r.field] = val;
+      log.push({ trade_id: editTrade.id, trader_account_id: id, scope: r.scope, field: r.field, old_value: cur == null ? null : String(cur), new_value: r.old_value, changed_by: user?.id || null, changed_by_name: (profile?.full_name || user?.email || 'Unknown') + ' · revert' });
+    });
+    if (Object.keys(tradeUpdates).length) { const { error: e1 } = await tradescope.from('trades').update(tradeUpdates).eq('id', editTrade.id); if (e1) { setTradeSaving(false); alert('Revert failed (trade): ' + e1.message); return; } }
+    if (Object.keys(acctUpdates).length) { const { error: e2 } = await tradescope.from('trader_accounts').update(acctUpdates).eq('id', id); if (e2) { setTradeSaving(false); alert('Revert failed (account): ' + e2.message); return; } }
+    await supabase.from('trade_adjustments').insert(log);
+    setTrades(prev => prev.map(t => t.id === editTrade.id ? { ...t, ...tradeUpdates } : t));
+    if (Object.keys(acctUpdates).length) setAccount(prev => ({ ...prev, ...acctUpdates }));
+    setTradeSaving(false); setEditTrade(null);
   }
 
   const sectionLabel = (text) => (
@@ -228,6 +354,9 @@ export default function TradingAccountDetail() {
                       {(tr.profit || 0) >= 0 ? '+' : ''}{fmtUsd(tr.profit)}
                     </div>
                   )}
+                  <button onClick={() => openEditTrade(tr)} title="Edit / adjust this trade" style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '6px', color: '#6366F1', fontSize: '12px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                    <SlidersHorizontal size={12} /> Edit
+                  </button>
                 </div>
               );
             })}
@@ -291,6 +420,55 @@ export default function TradingAccountDetail() {
               <div style={{ display: 'flex', gap: '10px', marginTop: '22px' }}>
                 <button onClick={() => setShowAdjust(false)} disabled={saving} style={{ flex: 1, padding: '11px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Cancel</button>
                 <button onClick={saveAdjust} disabled={saving} style={{ flex: 1, padding: '11px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, fontFamily: "'Inter', sans-serif" }}>{saving ? 'Saving…' : 'Save changes'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit-trade modal */}
+      {editTrade && (
+        <div onClick={() => !tradeSaving && setEditTrade(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: '14px', width: '560px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #F3F4F6' }}>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827' }}>Edit trade · {editTrade.symbol}</div>
+                <div style={{ fontSize: '12px', color: '#9CA3AF', marginTop: '2px' }}>Writes through to the client's TradeScope account · audit-logged</div>
+              </div>
+              <button onClick={() => !tradeSaving && setEditTrade(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: '4px' }}><X size={18} /></button>
+            </div>
+            <div style={{ padding: '20px 24px' }}>
+              <div style={{ fontSize: '11px', fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px' }}>Trade</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                {TRADE_FIELDS.map(fl => (
+                  <div key={fl.key}>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>{fl.label}</label>
+                    {fl.input === 'select' ? (
+                      <select value={tradeForm[fl.key] ?? ''} onChange={e => setTradeForm(p => ({ ...p, [fl.key]: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', border: '1px solid #E5E7EB', borderRadius: '8px', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: '#111827', background: '#fff' }}>
+                        {fl.options.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    ) : (
+                      <input type={fl.input === 'datetime' ? 'datetime-local' : 'number'} step={fl.step} value={tradeForm[fl.key] ?? ''} onChange={e => setTradeForm(p => ({ ...p, [fl.key]: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', border: '1px solid #E5E7EB', borderRadius: '8px', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: '#111827' }} />
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: '11px', fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.6px', margin: '22px 0 12px' }}>Account · applies to the whole account</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                {TRADE_ACCOUNT_FIELDS.map(fl => (
+                  <div key={fl.key}>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>{fl.label}</label>
+                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden' }}>
+                      <span style={{ padding: '0 0 0 12px', color: '#9CA3AF', fontSize: '13px' }}>$</span>
+                      <input type="number" step={fl.step} value={tradeForm['acct_' + fl.key] ?? ''} onChange={e => setTradeForm(p => ({ ...p, ['acct_' + fl.key]: e.target.value }))} style={{ flex: 1, width: '100%', padding: '10px 12px', border: 'none', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: '#111827' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '22px' }}>
+                <button onClick={() => setEditTrade(null)} disabled={tradeSaving} style={{ flex: '0 0 auto', padding: '11px 16px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Cancel</button>
+                <button onClick={revertTrade} disabled={tradeSaving || !tradeHasOriginal} title={tradeHasOriginal ? 'Restore this trade to its original values' : 'No recorded changes yet'} style={{ flex: '0 0 auto', padding: '11px 16px', background: '#fff', border: `1px solid ${tradeHasOriginal ? '#FCA5A5' : '#F3F4F6'}`, borderRadius: '8px', color: tradeHasOriginal ? '#DC2626' : '#D1D5DB', fontSize: '13px', fontWeight: '600', cursor: tradeHasOriginal ? 'pointer' : 'not-allowed', fontFamily: "'Inter', sans-serif" }}>Revert to original</button>
+                <button onClick={saveTradeEdit} disabled={tradeSaving} style={{ flex: 1, padding: '11px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: tradeSaving ? 'not-allowed' : 'pointer', opacity: tradeSaving ? 0.7 : 1, fontFamily: "'Inter', sans-serif" }}>{tradeSaving ? 'Saving…' : 'Save changes'}</button>
               </div>
             </div>
           </div>
