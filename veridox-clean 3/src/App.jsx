@@ -1,5 +1,7 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { useAuth } from './contexts/AuthContext';
+import { supabase } from './lib/supabase';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
@@ -40,9 +42,23 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+// Wherever a password-recovery link lands, route to the reset-password page.
+function RecoveryRedirect() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (window.location.hash.includes('type=recovery')) navigate('/reset-password', { replace: true });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') navigate('/reset-password', { replace: true });
+    });
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+  return null;
+}
+
 function App() {
   return (
     <BrowserRouter>
+      <RecoveryRedirect />
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/reset-password" element={<ResetPassword />} />
