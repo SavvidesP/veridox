@@ -5,10 +5,10 @@ import { teamMembers } from '../data/mockData';
 const inputStyle = {
   width: '100%', boxSizing: 'border-box',
   padding: '10px 14px',
-  border: '1px solid #E2E8F0',
+  border: '1px solid #E5E7EB',
   borderRadius: '8px',
   fontSize: '13px',
-  color: '#0F172A',
+  color: '#111827',
   background: 'white',
   outline: 'none',
   fontFamily: 'Inter, sans-serif',
@@ -16,7 +16,7 @@ const inputStyle = {
 
 const labelStyle = {
   display: 'block',
-  color: '#64748B',
+  color: '#6B7280',
   fontSize: '11px',
   fontWeight: '600',
   letterSpacing: '0.5px',
@@ -27,7 +27,7 @@ const labelStyle = {
 const sectionCard = {
   background: 'white',
   borderRadius: '12px',
-  border: '1px solid #E2E8F0',
+  border: '1px solid #E5E7EB',
   boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
   marginBottom: '16px',
   overflow: 'hidden',
@@ -57,16 +57,16 @@ export default function Settings() {
   return (
     <div style={{ padding: '32px', fontFamily: 'Inter, sans-serif' }}>
       <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ color: '#0F172A', fontSize: '22px', fontWeight: '700', margin: 0, letterSpacing: '-0.5px' }}>Settings</h1>
-        <p style={{ color: '#64748B', fontSize: '13px', margin: '4px 0 0' }}>Manage your workspace and team</p>
+        <h1 style={{ color: '#111827', fontSize: '26px', fontWeight: '700', margin: 0, letterSpacing: '-0.5px' }}>Settings</h1>
+        <p style={{ color: '#6B7280', fontSize: '13px', margin: '4px 0 0' }}>Manage your workspace and team</p>
       </div>
 
       <div style={{ maxWidth: '680px' }}>
         {/* Company */}
         <div style={sectionCard}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #F3F4F6', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Building2 size={15} color="#6366F1" />
-            <span style={{ color: '#0F172A', fontSize: '13px', fontWeight: '700' }}>Company Information</span>
+            <span style={{ color: '#111827', fontSize: '13px', fontWeight: '700' }}>Company Information</span>
           </div>
           <div style={{ padding: '20px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
@@ -86,7 +86,7 @@ export default function Settings() {
                     onChange={e => setCompany({ ...company, [field.key]: e.target.value })}
                     style={inputStyle}
                     onFocus={e => e.target.style.borderColor = '#6366F1'}
-                    onBlur={e => e.target.style.borderColor = '#E2E8F0'}
+                    onBlur={e => e.target.style.borderColor = '#E5E7EB'}
                   />
                 </div>
               ))}
@@ -110,10 +110,10 @@ export default function Settings() {
 
         {/* Team */}
         <div style={sectionCard}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Users size={15} color="#6366F1" />
-              <span style={{ color: '#0F172A', fontSize: '13px', fontWeight: '700' }}>Team Members</span>
+              <span style={{ color: '#111827', fontSize: '13px', fontWeight: '700' }}>Team Members</span>
             </div>
             <button style={{
               display: 'flex', alignItems: 'center', gap: '6px',
@@ -129,7 +129,7 @@ export default function Settings() {
               <div key={member.id} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '12px 14px', borderRadius: '8px',
-                border: '1px solid #F1F5F9', background: '#F8FAFC',
+                border: '1px solid #F3F4F6', background: '#F9FAFB',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <div style={{
@@ -142,8 +142,8 @@ export default function Settings() {
                     {member.name.split(' ').map(n => n[0]).join('')}
                   </div>
                   <div>
-                    <div style={{ color: '#0F172A', fontSize: '13px', fontWeight: '600' }}>{member.name}</div>
-                    <div style={{ color: '#94A3B8', fontSize: '11px' }}>{member.email}</div>
+                    <div style={{ color: '#111827', fontSize: '13px', fontWeight: '600' }}>{member.name}</div>
+                    <div style={{ color: '#9CA3AF', fontSize: '11px' }}>{member.email}</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -152,9 +152,9 @@ export default function Settings() {
                   </span>
                   <div style={{
                     width: '6px', height: '6px', borderRadius: '50%',
-                    background: member.status === 'active' ? '#22C55E' : '#94A3B8',
+                    background: member.status === 'active' ? '#22C55E' : '#9CA3AF',
                   }} />
-                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#CBD5E1', padding: '2px' }}>
+                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', padding: '2px' }}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -165,9 +165,9 @@ export default function Settings() {
 
         {/* KYC Requirements */}
         <div style={sectionCard}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #F3F4F6', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Shield size={15} color="#6366F1" />
-            <span style={{ color: '#0F172A', fontSize: '13px', fontWeight: '700' }}>KYC Requirements</span>
+            <span style={{ color: '#111827', fontSize: '13px', fontWeight: '700' }}>KYC Requirements</span>
           </div>
           <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {[
@@ -178,7 +178,7 @@ export default function Settings() {
             ].map((req, i) => (
               <label key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
                 <input type="checkbox" defaultChecked style={{ accentColor: '#6366F1', width: '14px', height: '14px' }} />
-                <span style={{ color: '#475569', fontSize: '13px' }}>{req}</span>
+                <span style={{ color: '#374151', fontSize: '13px' }}>{req}</span>
               </label>
             ))}
           </div>
