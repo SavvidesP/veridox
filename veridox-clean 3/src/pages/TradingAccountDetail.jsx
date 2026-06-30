@@ -243,11 +243,19 @@ export default function TradingAccountDetail() {
       return next;
     });
   }
-  // Setting a Closed-At time means the position is closed → flip status to 'closed' automatically,
-  // so on Save the trade closes exactly at the entered time (and counts toward realized Total P&L).
+  // CLOSED AT drives the close: a NOW/PAST time closes immediately (status→closed on save);
+  // a FUTURE time schedules the close (trade stays open, a backend cron closes it at that moment).
   function setTradeClosedAt(value) {
-    setTradeForm(prev => ({ ...prev, closed_at: value, ...(value ? { status: 'closed' } : {}) }));
+    const iso = fromLocalInput(value);
+    const future = iso && new Date(iso).getTime() > Date.now();
+    setTradeForm(prev => ({ ...prev, closed_at: value, ...(value && !future ? { status: 'closed' } : {}) }));
   }
+  // True while the modal's CLOSED AT holds a future time on a still-open trade → this will be a scheduled close.
+  const scheduledCloseIso = (() => {
+    if (!editTrade || editTrade.status !== 'open') return null;
+    const iso = fromLocalInput(tradeForm.closed_at);
+    return iso && new Date(iso).getTime() > Date.now() ? iso : null;
+  })();
   // Bidirectional link (other direction): editing this trade's profit flows into the account balance/equity.
   function setTradeProfit(value) {
     setTradeForm(prev => {
@@ -260,7 +268,7 @@ export default function TradingAccountDetail() {
   async function saveTradeEdit() {
     if (!editTrade) return;
     setTradeSaving(true);
-    const tradeUpdates = {}, acctUpdates = {}, audit = [];
+    const tradeUpdates = {}, acctUpdates = {}; let audit = [];
     TRADE_FIELDS.forEach(fl => {
       if (fl.input === 'datetime') {
         // Compare at the input's minute granularity so an UNTOUCHED timestamp isn't
@@ -283,11 +291,22 @@ export default function TradingAccountDetail() {
       const ov = account?.[fl.key] ?? 0;
       if (!sameValue(nv, ov)) { acctUpdates[fl.key] = nv; audit.push({ scope: 'account', field: fl.key, old_value: String(ov), new_value: nv == null ? null : String(nv) }); }
     });
+    // Scheduled close: a FUTURE CLOSED AT on an open trade → keep it open + store scheduled_close_at.
+    // The backend cron closes it and realizes the P&L into the account at that moment, so we don't
+    // close it or touch the account now (otherwise it would close immediately / double-realize).
+    if (scheduledCloseIso) {
+      delete tradeUpdates.closed_at;
+      delete tradeUpdates.status;
+      tradeUpdates.scheduled_close_at = scheduledCloseIso;
+      Object.keys(acctUpdates).forEach(k => delete acctUpdates[k]);
+      audit = audit.filter(a => a.scope !== 'account' && a.field !== 'closed_at' && a.field !== 'status');
+      audit.push({ scope: 'trade', field: 'scheduled_close_at', old_value: editTrade.scheduled_close_at ? String(editTrade.scheduled_close_at) : null, new_value: scheduledCloseIso });
+    }
     if (audit.length === 0) { setTradeSaving(false); setEditTrade(null); return; }
     // 1) Write through to the client's real TradeScope account
     if (Object.keys(tradeUpdates).length) {
       const { error } = await tradescope.from('trades').update(tradeUpdates).eq('id', editTrade.id);
-      if (error) { setTradeSaving(false); alert('Could not update trade: ' + error.message); return; }
+      if (error) { setTradeSaving(false); alert(/scheduled_close_at/.test(error.message || '') ? 'Add the scheduled_close_at column to the trades table first (see setup SQL).' : 'Could not update trade: ' + error.message); return; }
     }
     if (Object.keys(acctUpdates).length) {
       const { error } = await tradescope.from('trader_accounts').update(acctUpdates).eq('id', id);
@@ -420,6 +439,7 @@ export default function TradingAccountDetail() {
                       <span style={{ fontSize: '11px', color: '#9CA3AF' }}>{tr.lot_size} lot</span>
                       <span style={{ fontSize: '10px', fontWeight: '700', color: '#6366F1', border: '1px solid #C7D2FE', borderRadius: '4px', padding: '1px 6px' }}>1:{tr.leverage || 100}</span>
                       {open && <span style={{ fontSize: '10px', fontWeight: '700', color: '#2563EB', border: '1px solid #BFDBFE', borderRadius: '4px', padding: '1px 6px' }}>OPEN</span>}
+                      {open && tr.scheduled_close_at && <span style={{ fontSize: '10px', fontWeight: '700', color: '#4338CA', border: '1px solid #C7D2FE', borderRadius: '4px', padding: '1px 6px' }}>⏱ {fmtTime(tr.scheduled_close_at)}</span>}
                     </div>
                     <div style={{ fontSize: '11px', color: '#6B7280', marginTop: '2px' }}>
                       {fmtPrice(tr.open_price)}{!open && tr.close_price != null ? ` → ${fmtPrice(tr.close_price)}` : ''} · {fmtTime(open ? tr.opened_at : tr.closed_at)}
@@ -538,14 +558,19 @@ export default function TradingAccountDetail() {
                   </div>
                 ))}
               </div>
+              {scheduledCloseIso && (
+                <div style={{ marginTop: '22px', padding: '12px 14px', background: '#EEF2FF', border: '1px solid #C7D2FE', borderRadius: '8px', fontSize: '12px', color: '#4338CA', lineHeight: 1.5 }}>
+                  ⏱ <strong>Scheduled close</strong> — the trade stays <strong>open</strong> and auto-closes at <strong>{fmtTime(scheduledCloseIso)}</strong>. The P&amp;L you set here is applied to the account automatically at that moment (account fields below are handled then).
+                </div>
+              )}
               <div style={{ fontSize: '11px', fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.6px', margin: '22px 0 12px' }}>Account · applies to the whole account</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', opacity: scheduledCloseIso ? 0.5 : 1 }}>
                 {TRADE_ACCOUNT_FIELDS.map(fl => (
                   <div key={fl.key}>
                     <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>{fl.label}{fl.derived ? ' · auto' : ''}</label>
-                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden', background: fl.derived ? '#F9FAFB' : '#fff' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden', background: (fl.derived || scheduledCloseIso) ? '#F9FAFB' : '#fff' }}>
                       <span style={{ padding: '0 0 0 12px', color: '#9CA3AF', fontSize: '13px' }}>$</span>
-                      <input type="number" step={fl.step} value={tradeForm['acct_' + fl.key] ?? ''} readOnly={fl.derived} onChange={fl.derived ? undefined : (e => setTradeAcctField(fl.key, e.target.value))} style={{ flex: 1, width: '100%', padding: '10px 12px', border: 'none', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: fl.derived ? '#6B7280' : '#111827', background: 'transparent', cursor: fl.derived ? 'not-allowed' : 'text' }} />
+                      <input type="number" step={fl.step} value={tradeForm['acct_' + fl.key] ?? ''} readOnly={fl.derived || !!scheduledCloseIso} onChange={(fl.derived || scheduledCloseIso) ? undefined : (e => setTradeAcctField(fl.key, e.target.value))} style={{ flex: 1, width: '100%', padding: '10px 12px', border: 'none', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: fl.derived ? '#6B7280' : '#111827', background: 'transparent', cursor: (fl.derived || scheduledCloseIso) ? 'not-allowed' : 'text' }} />
                     </div>
                   </div>
                 ))}
@@ -561,7 +586,7 @@ export default function TradingAccountDetail() {
               <div style={{ display: 'flex', gap: '10px', marginTop: '22px' }}>
                 <button onClick={() => setEditTrade(null)} disabled={tradeSaving} style={{ flex: '0 0 auto', padding: '11px 16px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Cancel</button>
                 <button onClick={revertTrade} disabled={tradeSaving || tradeChecking || !tradeHasOriginal} title={tradeChecking ? 'Checking history…' : tradeHasOriginal ? 'Restore this trade to its original values' : 'No recorded changes yet'} style={{ flex: '0 0 auto', padding: '11px 16px', background: '#fff', border: `1px solid ${tradeHasOriginal && !tradeChecking ? '#FCA5A5' : '#F3F4F6'}`, borderRadius: '8px', color: tradeHasOriginal && !tradeChecking ? '#DC2626' : '#D1D5DB', fontSize: '13px', fontWeight: '600', cursor: (tradeHasOriginal && !tradeChecking) ? 'pointer' : 'not-allowed', fontFamily: "'Inter', sans-serif" }}>{tradeChecking ? 'Checking…' : 'Revert to original'}</button>
-                <button onClick={saveTradeEdit} disabled={tradeSaving} style={{ flex: 1, padding: '11px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: tradeSaving ? 'not-allowed' : 'pointer', opacity: tradeSaving ? 0.7 : 1, fontFamily: "'Inter', sans-serif" }}>{tradeSaving ? 'Saving…' : 'Save changes'}</button>
+                <button onClick={saveTradeEdit} disabled={tradeSaving} style={{ flex: 1, padding: '11px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: tradeSaving ? 'not-allowed' : 'pointer', opacity: tradeSaving ? 0.7 : 1, fontFamily: "'Inter', sans-serif" }}>{tradeSaving ? 'Saving…' : scheduledCloseIso ? '⏱ Schedule close' : 'Save changes'}</button>
               </div>
             </div>
           </div>
