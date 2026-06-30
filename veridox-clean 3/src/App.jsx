@@ -17,6 +17,7 @@ import Cascading from './pages/Cascading';
 import TransactionDetail from './pages/TransactionDetail';
 import Integrations from './pages/Integrations';
 import TradingAccounts from './pages/TradingAccounts';
+import TradingAccountDetail from './pages/TradingAccountDetail';
 import BonusManagement from './pages/BonusManagement';
 import IBAffiliate from './pages/IBAffiliate';
 import FinancialReports from './pages/FinancialReports';
@@ -57,6 +58,7 @@ function App() {
         <Route path="/cascading" element={<ProtectedRoute><Layout><Cascading /></Layout></ProtectedRoute>} />
         <Route path="/integrations" element={<ProtectedRoute><Layout><Integrations /></Layout></ProtectedRoute>} />
         <Route path="/trading-accounts" element={<ProtectedRoute><Layout><TradingAccounts /></Layout></ProtectedRoute>} />
+        <Route path="/trading-accounts/:id" element={<ProtectedRoute><Layout><TradingAccountDetail /></Layout></ProtectedRoute>} />
         <Route path="/bonus-management" element={<ProtectedRoute><Layout><BonusManagement /></Layout></ProtectedRoute>} />
         <Route path="/ib-affiliate" element={<ProtectedRoute><Layout><IBAffiliate /></Layout></ProtectedRoute>} />
         <Route path="/financial-reports" element={<ProtectedRoute><Layout><FinancialReports /></Layout></ProtectedRoute>} />
