@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, CheckCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { invalidate } from '../lib/cache';
 import { useAuth } from '../contexts/AuthContext';
 
 const inputStyle = { width: '100%', boxSizing: 'border-box', padding: '10px 14px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', color: '#0F172A', background: 'white', outline: 'none', fontFamily: 'Inter, sans-serif' };
@@ -34,6 +35,7 @@ export default function AddClient() {
       setError('Failed to save client. Please try again.');
       setSaving(false);
     } else {
+      invalidate('clients');
       setSubmitted(true);
       setTimeout(() => navigate('/clients'), 2000);
     }
