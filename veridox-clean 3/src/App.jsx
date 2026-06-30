@@ -18,6 +18,7 @@ import TransactionDetail from './pages/TransactionDetail';
 import Integrations from './pages/Integrations';
 import TradingAccounts from './pages/TradingAccounts';
 import TradingAccountDetail from './pages/TradingAccountDetail';
+import TeamMemberDetail from './pages/TeamMemberDetail';
 import BonusManagement from './pages/BonusManagement';
 import IBAffiliate from './pages/IBAffiliate';
 import FinancialReports from './pages/FinancialReports';
@@ -49,6 +50,7 @@ function App() {
         <Route path="/pipeline" element={<ProtectedRoute><Layout><KYCPipeline /></Layout></ProtectedRoute>} />
         <Route path="/add-client" element={<ProtectedRoute><Layout><AddClient /></Layout></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Layout><Settings /></Layout></ProtectedRoute>} />
+        <Route path="/team/:id" element={<ProtectedRoute><Layout><TeamMemberDetail /></Layout></ProtectedRoute>} />
         <Route path="/transactions" element={<ProtectedRoute><Layout><Transactions /></Layout></ProtectedRoute>} />
         <Route path="/transactions/:id" element={<ProtectedRoute><Layout><TransactionDetail /></Layout></ProtectedRoute>} />
         <Route path="/routing" element={<ProtectedRoute><Layout><Routing /></Layout></ProtectedRoute>} />
