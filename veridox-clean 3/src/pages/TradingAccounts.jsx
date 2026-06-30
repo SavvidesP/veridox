@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Download } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { tradescope } from '../lib/tradescope';
 
 const sectionLabel = (text) => (
   <div style={{ fontSize: '11px', fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>{text}</div>
@@ -21,11 +21,11 @@ export default function TradingAccounts() {
 
   async function fetchData() {
     setLoading(true);
-    const { data: accs } = await supabase
+    const { data: accs } = await tradescope
       .from('trader_accounts')
       .select('*')
       .order('created_at', { ascending: false });
-    const { data: trs } = await supabase
+    const { data: trs } = await tradescope
       .from('trades')
       .select('*')
       .order('opened_at', { ascending: false });
