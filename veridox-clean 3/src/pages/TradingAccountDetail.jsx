@@ -94,6 +94,7 @@ export default function TradingAccountDetail() {
   const [tradeForm, setTradeForm] = useState({});
   const [tradeSaving, setTradeSaving] = useState(false);
   const [tradeHasOriginal, setTradeHasOriginal] = useState(false);
+  const [tradeChecking, setTradeChecking] = useState(false);
 
   async function loadAdjustments() {
     const { data, error } = await supabase
@@ -190,8 +191,13 @@ export default function TradingAccountDetail() {
     setTradeForm(f);
     setEditTrade(tr);
     // Can we revert? Only if this trade already has recorded adjustments (original captured).
+    // Reset + flag while checking so Revert stays disabled until we actually know (no stale
+    // "enabled" state from a previously-opened trade, and no early-click no-op).
+    setTradeHasOriginal(false);
+    setTradeChecking(true);
     const { data } = await supabase.from('trade_adjustments').select('id').eq('trade_id', tr.id).limit(1);
     setTradeHasOriginal(!!(data && data.length));
+    setTradeChecking(false);
   }
 
   async function saveTradeEdit() {
@@ -199,8 +205,20 @@ export default function TradingAccountDetail() {
     setTradeSaving(true);
     const tradeUpdates = {}, acctUpdates = {}, audit = [];
     TRADE_FIELDS.forEach(fl => {
+      if (fl.input === 'datetime') {
+        // Compare at the input's minute granularity so an UNTOUCHED timestamp isn't
+        // rewritten (which would strip seconds and log a spurious change).
+        const origStr = toLocalInput(editTrade[fl.key]);
+        const curStr = tradeForm[fl.key] || '';
+        if (curStr === origStr) return;
+        const nv = fromLocalInput(curStr);
+        const ov = editTrade[fl.key] ? new Date(editTrade[fl.key]).toISOString() : null;
+        tradeUpdates[fl.key] = nv;
+        audit.push({ scope: 'trade', field: fl.key, old_value: ov == null ? null : String(ov), new_value: nv == null ? null : String(nv) });
+        return;
+      }
       const nv = normalizeField(fl, tradeForm[fl.key]);
-      const ov = fl.input === 'datetime' ? (editTrade[fl.key] ? new Date(editTrade[fl.key]).toISOString() : null) : (editTrade[fl.key] ?? null);
+      const ov = editTrade[fl.key] ?? null;
       if (!sameValue(nv, ov)) { tradeUpdates[fl.key] = nv; audit.push({ scope: 'trade', field: fl.key, old_value: ov == null ? null : String(ov), new_value: nv == null ? null : String(nv) }); }
     });
     TRADE_ACCOUNT_FIELDS.forEach(fl => {
@@ -467,7 +485,7 @@ export default function TradingAccountDetail() {
               </div>
               <div style={{ display: 'flex', gap: '10px', marginTop: '22px' }}>
                 <button onClick={() => setEditTrade(null)} disabled={tradeSaving} style={{ flex: '0 0 auto', padding: '11px 16px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Cancel</button>
-                <button onClick={revertTrade} disabled={tradeSaving || !tradeHasOriginal} title={tradeHasOriginal ? 'Restore this trade to its original values' : 'No recorded changes yet'} style={{ flex: '0 0 auto', padding: '11px 16px', background: '#fff', border: `1px solid ${tradeHasOriginal ? '#FCA5A5' : '#F3F4F6'}`, borderRadius: '8px', color: tradeHasOriginal ? '#DC2626' : '#D1D5DB', fontSize: '13px', fontWeight: '600', cursor: tradeHasOriginal ? 'pointer' : 'not-allowed', fontFamily: "'Inter', sans-serif" }}>Revert to original</button>
+                <button onClick={revertTrade} disabled={tradeSaving || tradeChecking || !tradeHasOriginal} title={tradeChecking ? 'Checking history…' : tradeHasOriginal ? 'Restore this trade to its original values' : 'No recorded changes yet'} style={{ flex: '0 0 auto', padding: '11px 16px', background: '#fff', border: `1px solid ${tradeHasOriginal && !tradeChecking ? '#FCA5A5' : '#F3F4F6'}`, borderRadius: '8px', color: tradeHasOriginal && !tradeChecking ? '#DC2626' : '#D1D5DB', fontSize: '13px', fontWeight: '600', cursor: (tradeHasOriginal && !tradeChecking) ? 'pointer' : 'not-allowed', fontFamily: "'Inter', sans-serif" }}>{tradeChecking ? 'Checking…' : 'Revert to original'}</button>
                 <button onClick={saveTradeEdit} disabled={tradeSaving} style={{ flex: 1, padding: '11px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: tradeSaving ? 'not-allowed' : 'pointer', opacity: tradeSaving ? 0.7 : 1, fontFamily: "'Inter', sans-serif" }}>{tradeSaving ? 'Saving…' : 'Save changes'}</button>
               </div>
             </div>
