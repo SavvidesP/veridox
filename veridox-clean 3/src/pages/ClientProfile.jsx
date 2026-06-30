@@ -80,14 +80,12 @@ export default function ClientProfile() {
       if (c.data) {
         const name = `${c.data.first_name} ${c.data.last_name}`;
         Promise.all([
-          // Match transactions to THIS client by exact first+last name (AND, case-insensitive).
-          // The transactions table has no client_id FK, so name is the only link — but an
-          // exact AND match avoids the old OR-partial bug that pulled in unrelated people.
+          // Match transactions to THIS client by the persisted client_id FK
+          // (added via migration; auto-linked on insert + on client-add by DB triggers).
           supabase.from('transactions').select('*')
-            .ilike('first_name', c.data.first_name || '')
-            .ilike('last_name', c.data.last_name || '')
+            .eq('client_id', c.data.id)
             .order('created_date', { ascending: false })
-            .limit(50),
+            .limit(100),
           supabase.from('disputes').select('*')
             .ilike('client_name', `${c.data.first_name || ''} ${c.data.last_name || ''}`.trim())
             .order('created_at', { ascending: false }),
