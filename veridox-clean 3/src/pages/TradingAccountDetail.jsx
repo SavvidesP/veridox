@@ -16,14 +16,25 @@ function fmtTime(v) {
   return new Date(v).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-// Real adjustable columns on TradeScope trader_accounts
+// Real adjustable columns on TradeScope trader_accounts.
+// equity & free_margin are DERIVED (auto-calculated from balance/margin) so the account stays internally consistent.
 const ADJUSTABLE = [
   { key: 'balance', label: 'Balance', prefix: '$' },
-  { key: 'equity', label: 'Equity', prefix: '$' },
+  { key: 'equity', label: 'Equity', prefix: '$', derived: true },
   { key: 'margin', label: 'Margin', prefix: '$' },
-  { key: 'free_margin', label: 'Free Margin', prefix: '$' },
+  { key: 'free_margin', label: 'Free Margin', prefix: '$', derived: true },
   { key: 'leverage', label: 'Leverage', prefix: '1:' },
 ];
+
+// Standard forex account math.
+const toNum = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+const round2 = (n) => Math.round(n * 100) / 100;
+// Equity = Balance + floating P&L (of open positions); Free Margin = Equity − Used Margin.
+const deriveEquity = (balance, floatPnL) => round2(toNum(balance) + toNum(floatPnL));
+const deriveFreeMargin = (equity, margin) => round2(toNum(equity) - toNum(margin));
+// Margin Level % = Equity / Used Margin × 100 (null when no margin is used).
+const calcMarginLevel = (equity, margin) => { const m = toNum(margin); return m > 0 ? round2((toNum(equity) / m) * 100) : null; };
+const fmtMarginLevel = (ml) => (ml == null ? '—' : `${ml.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`);
 
 const fieldLabel = (k) => (ADJUSTABLE.find(f => f.key === k)?.label || k);
 
@@ -44,9 +55,9 @@ const TRADE_FIELDS = [
 // Account-level fields editable from the same modal (write to trader_accounts)
 const TRADE_ACCOUNT_FIELDS = [
   { key: 'balance', label: 'Balance', input: 'number', step: 'any' },
-  { key: 'equity', label: 'Equity', input: 'number', step: 'any' },
+  { key: 'equity', label: 'Equity', input: 'number', step: 'any', derived: true },
   { key: 'margin', label: 'Margin', input: 'number', step: 'any' },
-  { key: 'free_margin', label: 'Free Margin', input: 'number', step: 'any' },
+  { key: 'free_margin', label: 'Free Margin', input: 'number', step: 'any', derived: true },
 ];
 
 // ISO ⇄ <input type="datetime-local"> helpers (local-time display, ISO storage)
@@ -95,6 +106,7 @@ export default function TradingAccountDetail() {
   const [tradeSaving, setTradeSaving] = useState(false);
   const [tradeHasOriginal, setTradeHasOriginal] = useState(false);
   const [tradeChecking, setTradeChecking] = useState(false);
+  const [floatPnL, setFloatPnL] = useState(0); // open-positions' floating P&L = equity − balance (captured when a modal opens)
 
   async function loadAdjustments() {
     const { data, error } = await supabase
@@ -144,7 +156,20 @@ export default function TradingAccountDetail() {
     const f = {};
     ADJUSTABLE.forEach(({ key }) => { f[key] = account?.[key] ?? 0; });
     setForm(f);
+    setFloatPnL(round2(toNum(account?.equity) - toNum(account?.balance)));
     setShowAdjust(true);
+  }
+
+  // Adjust-account modal: editing Balance (or Margin) auto-recomputes Equity, Free Margin & Margin Level.
+  function setAdjustField(key, value) {
+    setForm(prev => {
+      const next = { ...prev, [key]: value };
+      if (key === 'balance') next.equity = deriveEquity(value, floatPnL);
+      if (key === 'balance' || key === 'margin' || key === 'equity') {
+        next.free_margin = deriveFreeMargin(next.equity, next.margin);
+      }
+      return next;
+    });
   }
 
   async function saveAdjust() {
@@ -189,6 +214,7 @@ export default function TradingAccountDetail() {
     TRADE_FIELDS.forEach(fl => { f[fl.key] = fl.input === 'datetime' ? toLocalInput(tr[fl.key]) : (tr[fl.key] ?? ''); });
     TRADE_ACCOUNT_FIELDS.forEach(fl => { f['acct_' + fl.key] = account?.[fl.key] ?? 0; });
     setTradeForm(f);
+    setFloatPnL(round2(toNum(account?.equity) - toNum(account?.balance)));
     setEditTrade(tr);
     // Can we revert? Only if this trade already has recorded adjustments (original captured).
     // Reset + flag while checking so Revert stays disabled until we actually know (no stale
@@ -198,6 +224,18 @@ export default function TradingAccountDetail() {
     const { data } = await supabase.from('trade_adjustments').select('id').eq('trade_id', tr.id).limit(1);
     setTradeHasOriginal(!!(data && data.length));
     setTradeChecking(false);
+  }
+
+  // Per-trade modal account section: editing Balance (or Margin) auto-recomputes Equity, Free Margin & Margin Level.
+  function setTradeAcctField(key, value) {
+    setTradeForm(prev => {
+      const next = { ...prev, ['acct_' + key]: value };
+      if (key === 'balance') next.acct_equity = deriveEquity(value, floatPnL);
+      if (key === 'balance' || key === 'margin' || key === 'equity') {
+        next.acct_free_margin = deriveFreeMargin(next.acct_equity, next.acct_margin);
+      }
+      return next;
+    });
   }
 
   async function saveTradeEdit() {
@@ -319,6 +357,7 @@ export default function TradingAccountDetail() {
               { label: 'Equity', value: fmtUsd(account.equity) },
               { label: 'Margin', value: fmtUsd(account.margin) },
               { label: 'Free Margin', value: fmtUsd(account.free_margin) },
+              { label: 'Margin Level', value: fmtMarginLevel(calcMarginLevel(account.equity, account.margin)), color: (() => { const ml = calcMarginLevel(account.equity, account.margin); return ml == null ? undefined : ml < 50 ? '#DC2626' : ml < 100 ? '#D97706' : '#16A34A'; })() },
               { label: 'Leverage', value: `1:${account.leverage || 100}` },
               { label: 'Total P&L', value: `${totalPnL >= 0 ? '+' : ''}${fmtUsd(totalPnL)}`, color: totalPnL >= 0 ? '#16A34A' : '#DC2626' },
             ].map(({ label, value, color }) => (
@@ -420,20 +459,29 @@ export default function TradingAccountDetail() {
             </div>
             <div style={{ padding: '20px 24px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                {ADJUSTABLE.map(({ key, label, prefix }) => (
+                {ADJUSTABLE.map(({ key, label, prefix, derived }) => (
                   <div key={key}>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>{label}</label>
-                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden' }}>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>{label}{derived ? ' · auto' : ''}</label>
+                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden', background: derived ? '#F9FAFB' : '#fff' }}>
                       <span style={{ padding: '0 0 0 12px', color: '#9CA3AF', fontSize: '13px' }}>{prefix}</span>
                       <input
                         type="number"
                         value={form[key]}
-                        onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
-                        style={{ flex: 1, padding: '10px 12px', border: 'none', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: '#111827', width: '100%' }}
+                        readOnly={derived}
+                        onChange={derived ? undefined : (e => setAdjustField(key, e.target.value))}
+                        style={{ flex: 1, padding: '10px 12px', border: 'none', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: derived ? '#6B7280' : '#111827', width: '100%', background: 'transparent', cursor: derived ? 'not-allowed' : 'text' }}
                       />
                     </div>
                   </div>
                 ))}
+                {(() => { const ml = calcMarginLevel(form.equity, form.margin); const c = ml == null ? '#6B7280' : ml < 50 ? '#DC2626' : ml < 100 ? '#D97706' : '#16A34A'; return (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>Margin Level · auto</label>
+                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #E5E7EB', borderRadius: '8px', background: '#F9FAFB', padding: '10px 12px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: '700', color: c }}>{fmtMarginLevel(ml)}</span>
+                    </div>
+                  </div>
+                ); })()}
               </div>
               <div style={{ display: 'flex', gap: '10px', marginTop: '22px' }}>
                 <button onClick={() => setShowAdjust(false)} disabled={saving} style={{ flex: 1, padding: '11px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Cancel</button>
@@ -475,13 +523,21 @@ export default function TradingAccountDetail() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                 {TRADE_ACCOUNT_FIELDS.map(fl => (
                   <div key={fl.key}>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>{fl.label}</label>
-                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden' }}>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>{fl.label}{fl.derived ? ' · auto' : ''}</label>
+                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden', background: fl.derived ? '#F9FAFB' : '#fff' }}>
                       <span style={{ padding: '0 0 0 12px', color: '#9CA3AF', fontSize: '13px' }}>$</span>
-                      <input type="number" step={fl.step} value={tradeForm['acct_' + fl.key] ?? ''} onChange={e => setTradeForm(p => ({ ...p, ['acct_' + fl.key]: e.target.value }))} style={{ flex: 1, width: '100%', padding: '10px 12px', border: 'none', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: '#111827' }} />
+                      <input type="number" step={fl.step} value={tradeForm['acct_' + fl.key] ?? ''} readOnly={fl.derived} onChange={fl.derived ? undefined : (e => setTradeAcctField(fl.key, e.target.value))} style={{ flex: 1, width: '100%', padding: '10px 12px', border: 'none', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: fl.derived ? '#6B7280' : '#111827', background: 'transparent', cursor: fl.derived ? 'not-allowed' : 'text' }} />
                     </div>
                   </div>
                 ))}
+                {(() => { const ml = calcMarginLevel(tradeForm.acct_equity, tradeForm.acct_margin); const c = ml == null ? '#6B7280' : ml < 50 ? '#DC2626' : ml < 100 ? '#D97706' : '#16A34A'; return (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>Margin Level · auto</label>
+                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #E5E7EB', borderRadius: '8px', background: '#F9FAFB', padding: '10px 12px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: '700', color: c }}>{fmtMarginLevel(ml)}</span>
+                    </div>
+                  </div>
+                ); })()}
               </div>
               <div style={{ display: 'flex', gap: '10px', marginTop: '22px' }}>
                 <button onClick={() => setEditTrade(null)} disabled={tradeSaving} style={{ flex: '0 0 auto', padding: '11px 16px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Cancel</button>
