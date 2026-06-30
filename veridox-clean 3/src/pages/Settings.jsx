@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
-import { Users, Plus, Trash2, X, Copy, Check, ChevronDown } from 'lucide-react';
+import { Users, Plus, Trash2, X, Copy, Check, ChevronDown, KeyRound } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -54,6 +54,8 @@ export default function Settings() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [created, setCreated] = useState(null); // generated credentials to show
+  const [resetingId, setResetingId] = useState(null);
+  const [resetResult, setResetResult] = useState(null); // { name, email, password } or { name, error }
 
   useEffect(() => { loadMembers(); }, [user?.id]);
 
@@ -121,6 +123,18 @@ export default function Settings() {
     setMembers(prev => prev.filter(m => m.id !== member.id));
   }
 
+  async function resetPassword(e, member) {
+    e.stopPropagation();
+    setResetingId(member.id);
+    const { data, error } = await supabase.functions.invoke('reset-member-password', { body: { targetUserId: member.id } });
+    setResetingId(null);
+    if (error || data?.error) {
+      setResetResult({ name: member.full_name || member.email, error: data?.error || error?.message || 'Reset failed' });
+    } else {
+      setResetResult({ name: member.full_name || member.email, email: member.email, password: data.password });
+    }
+  }
+
   const initials = (m) => (m.full_name || m.email || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
   return (
@@ -170,6 +184,9 @@ export default function Settings() {
                     <ChevronDown size={12} color="#6B7280" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
                   </div>
                   <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: member.active === false ? '#9CA3AF' : '#22C55E' }} title={member.active === false ? 'inactive' : 'active'} />
+                  <button onClick={e => resetPassword(e, member)} disabled={resetingId === member.id} title="Reset password" style={{ background: 'none', border: 'none', cursor: resetingId === member.id ? 'wait' : 'pointer', color: '#9CA3AF', padding: '2px', display: 'flex' }}>
+                    <KeyRound size={14} />
+                  </button>
                   <button onClick={() => removeMember(member)} disabled={member.id === user?.id} style={{ background: 'none', border: 'none', cursor: member.id === user?.id ? 'not-allowed' : 'pointer', color: '#D1D5DB', padding: '2px', opacity: member.id === user?.id ? 0.4 : 1 }}>
                     <Trash2 size={14} />
                   </button>
@@ -228,6 +245,32 @@ export default function Settings() {
                 <button onClick={() => { setShowInvite(false); resetInvite(); }} style={{ width: '100%', padding: '11px', background: '#111827', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Done</button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Reset password result modal */}
+      {resetResult && (
+        <div onClick={() => setResetResult(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: '14px', width: '440px', maxWidth: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #F3F4F6' }}>
+              <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827' }}>Password reset</div>
+              <button onClick={() => setResetResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: '4px' }}><X size={18} /></button>
+            </div>
+            <div style={{ padding: '20px 24px' }}>
+              {resetResult.error ? (
+                <div style={{ background: '#FEE2E2', color: '#991B1B', fontSize: '13px', padding: '12px 14px', borderRadius: '8px', marginBottom: '16px' }}>{resetResult.error}</div>
+              ) : (
+                <>
+                  <div style={{ fontSize: '13px', color: '#374151', marginBottom: '14px' }}>🔑 New password for <strong>{resetResult.name}</strong>. Hand it over — it won't be shown again.</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '18px' }}>
+                    <CopyRow label="Email (login)" value={resetResult.email} />
+                    <CopyRow label="New password" value={resetResult.password} />
+                  </div>
+                </>
+              )}
+              <button onClick={() => setResetResult(null)} style={{ width: '100%', padding: '11px', background: '#111827', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Done</button>
+            </div>
           </div>
         </div>
       )}
