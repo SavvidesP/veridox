@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
+import { Download } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
+const sectionLabel = (text) => (
+  <div style={{ fontSize: '11px', fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>{text}</div>
+);
+
+function formatMoney(v) {
+  return `$${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 export default function TradingAccounts() {
   const [accounts, setAccounts] = useState([]);
@@ -27,110 +35,116 @@ export default function TradingAccounts() {
   }
 
   function exportCSV() {
-    const headers = ['Email','Name','Balance','Equity','Leverage','Open Trades','Closed Trades','Total P&L','Created'];
+    const headers = ['Email', 'Name', 'Balance', 'Equity', 'Leverage', 'Open Trades', 'Closed Trades', 'Total P&L', 'Created'];
     const rows = accounts.map(a => {
       const accountTrades = trades.filter(t => t.trader_id === a.id);
       const openTrades = accountTrades.filter(t => t.status === 'open');
       const closedTrades = accountTrades.filter(t => t.status === 'closed');
       const totalPnL = closedTrades.reduce((s, t) => s + (t.profit || 0), 0);
       return [
-        a.email, a.name||'', (a.balance||0).toFixed(2), (a.equity||0).toFixed(2),
-        `1:${a.leverage||100}`, openTrades.length, closedTrades.length,
-        totalPnL.toFixed(2), a.created_at?new Date(a.created_at).toLocaleDateString():'',
+        a.email, a.name || '', (a.balance || 0).toFixed(2), (a.equity || 0).toFixed(2),
+        `1:${a.leverage || 100}`, openTrades.length, closedTrades.length,
+        totalPnL.toFixed(2), a.created_at ? new Date(a.created_at).toLocaleDateString() : '',
       ];
     });
-    const csv=[headers,...rows].map(r=>r.join(',')).join('\n');
-    const blob=new Blob([csv],{type:'text/csv'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;a.download='trading_accounts.csv';a.click();
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'trading_accounts.csv'; a.click();
     URL.revokeObjectURL(url);
   }
 
-  const C = {
-    bg: '#0f1117', panel: '#1a1d27', border: '#2a2e39',
-    text: '#d1d4dc', muted: '#787b86', accent: '#6366F1',
-    green: '#26a69a', red: '#ef5350',
-  };
-
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: C.muted, fontFamily: 'Inter,sans-serif' }}>
-      Loading...
+    <div style={{ padding: '40px 44px', fontFamily: "'Inter', sans-serif", background: '#fff', minHeight: '100vh', color: '#D1D5DB', fontSize: '13px' }}>
+      Loading…
     </div>
   );
 
+  const totalBalance = accounts.reduce((s, a) => s + (a.balance || 0), 0);
+  const openCount = trades.filter(t => t.status === 'open').length;
+  const closedCount = trades.filter(t => t.status === 'closed').length;
+
   return (
-    <div style={{ padding: '24px', fontFamily: 'Inter,sans-serif', color: C.text }}>
+    <div style={{ padding: '40px 44px', fontFamily: "'Inter', sans-serif", background: '#fff', minHeight: '100vh' }}>
+
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '36px' }}>
         <div>
-          <h1 style={{ fontSize: '20px', fontWeight: '700', color: C.text, margin: 0 }}>Trading Accounts</h1>
-          <p style={{ fontSize: '13px', color: C.muted, margin: '4px 0 0' }}>{accounts.length} trader accounts</p>
+          <h1 style={{ color: '#111827', fontSize: '26px', fontWeight: '700', margin: 0, letterSpacing: '-0.5px' }}>Trading Accounts</h1>
+          <p style={{ color: '#9CA3AF', fontSize: '13px', margin: '5px 0 0', fontWeight: '400' }}>{accounts.length} trader account{accounts.length === 1 ? '' : 's'}</p>
         </div>
         <button
           onClick={exportCSV}
-          style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: C.accent, border: 'none', borderRadius: '8px', color: 'white', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '5px', color: '#374151', fontSize: '13px', fontWeight: '500', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = '#9CA3AF'}
+          onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          Export .csv
+          <Download size={14} /> Export .csv
         </button>
       </div>
 
-      {/* Stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '16px', marginBottom: '24px' }}>
+      {/* Stats */}
+      {sectionLabel('Overview')}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '32px' }}>
         {[
           { label: 'Total Accounts', value: accounts.length },
-          { label: 'Total Balance', value: `$${accounts.reduce((s, a) => s + (a.balance || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
-          { label: 'Open Trades', value: trades.filter(t => t.status === 'open').length },
-          { label: 'Closed Trades', value: trades.filter(t => t.status === 'closed').length },
+          { label: 'Total Balance', value: formatMoney(totalBalance) },
+          { label: 'Open Trades', value: openCount },
+          { label: 'Closed Trades', value: closedCount },
         ].map(({ label, value }) => (
-          <div key={label} style={{ background: C.panel, borderRadius: '10px', padding: '16px 20px', border: `1px solid ${C.border}` }}>
-            <div style={{ fontSize: '11px', color: C.muted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>{label}</div>
-            <div style={{ fontSize: '22px', fontWeight: '700', color: C.text }}>{value}</div>
+          <div key={label} style={{ background: '#fff', borderRadius: '6px', padding: '24px 28px', border: '1px solid #E5E7EB' }}>
+            <div style={{ color: '#9CA3AF', fontSize: '11px', fontWeight: '600', letterSpacing: '0.7px', textTransform: 'uppercase', marginBottom: '14px' }}>{label}</div>
+            <div style={{ color: '#111827', fontSize: '32px', fontWeight: '700', letterSpacing: '-1px', lineHeight: 1 }}>{value}</div>
           </div>
         ))}
       </div>
 
+      <div style={{ borderTop: '1px solid #F3F4F6', margin: '28px 0' }} />
+
       {/* Table */}
-      <div style={{ background: C.panel, borderRadius: '12px', border: `1px solid ${C.border}`, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+      {sectionLabel('Accounts')}
+      <div style={{ border: '1px solid #E5E7EB', borderRadius: '6px', overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
           <thead>
-            <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+            <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
               {['Email', 'Balance', 'Equity', 'Leverage', 'Open', 'Closed', 'Total P&L', 'Created'].map(h => (
-                <th key={h} style={{ padding: '12px 16px', textAlign: 'left', color: C.muted, fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
+                <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#9CA3AF', letterSpacing: '0.6px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {accounts.map(a => {
+            {accounts.length === 0 ? (
+              <tr><td colSpan={8} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>No trading accounts found.</td></tr>
+            ) : accounts.map((a, idx) => {
               const accountTrades = trades.filter(t => t.trader_id === a.id);
               const openTrades = accountTrades.filter(t => t.status === 'open').length;
               const closedTrades = accountTrades.filter(t => t.status === 'closed').length;
               const totalPnL = accountTrades.filter(t => t.status === 'closed').reduce((s, t) => s + (t.profit || 0), 0);
               return (
-                <tr key={a.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-                  <td style={{ padding: '12px 16px', color: C.text, fontWeight: '500' }}>{a.email}</td>
-                  <td style={{ padding: '12px 16px', color: C.text, fontFamily: 'monospace' }}>${(a.balance || 0).toFixed(2)}</td>
-                  <td style={{ padding: '12px 16px', color: C.text, fontFamily: 'monospace' }}>${(a.equity || 0).toFixed(2)}</td>
-                  <td style={{ padding: '12px 16px', color: C.muted }}>1:{a.leverage || 100}</td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{ background: 'rgba(41,98,255,0.15)', color: '#2962ff', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>{openTrades}</span>
+                <tr
+                  key={a.id}
+                  style={{ borderBottom: idx < accounts.length - 1 ? '1px solid #F3F4F6' : 'none', background: '#fff' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
+                  onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                >
+                  <td style={{ padding: '14px 16px', color: '#111827', fontSize: '13px', fontWeight: '500' }}>{a.email}</td>
+                  <td style={{ padding: '14px 16px', color: '#111827', fontSize: '13px', fontFamily: 'monospace' }}>{formatMoney(a.balance)}</td>
+                  <td style={{ padding: '14px 16px', color: '#111827', fontSize: '13px', fontFamily: 'monospace' }}>{formatMoney(a.equity)}</td>
+                  <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '13px' }}>1:{a.leverage || 100}</td>
+                  <td style={{ padding: '14px 16px' }}>
+                    <span style={{ background: 'transparent', color: '#2563EB', border: '1px solid #BFDBFE', padding: '2px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>{openTrades}</span>
                   </td>
-                  <td style={{ padding: '12px 16px', color: C.muted }}>{closedTrades}</td>
-                  <td style={{ padding: '12px 16px', fontWeight: '600', color: totalPnL >= 0 ? C.green : C.red }}>
-                    {totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(2)}
+                  <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '13px' }}>{closedTrades}</td>
+                  <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: '600', color: totalPnL >= 0 ? '#16A34A' : '#DC2626' }}>
+                    {totalPnL >= 0 ? '+' : ''}{formatMoney(totalPnL).replace('$', '$')}
                   </td>
-                  <td style={{ padding: '12px 16px', color: C.muted, fontSize: '12px' }}>
-                    {a.created_at ? new Date(a.created_at).toLocaleDateString() : '—'}
+                  <td style={{ padding: '14px 16px', color: '#9CA3AF', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                    {a.created_at ? new Date(a.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                   </td>
                 </tr>
               );
             })}
-            {accounts.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: C.muted }}>No trading accounts found</td></tr>
-            )}
           </tbody>
         </table>
       </div>
