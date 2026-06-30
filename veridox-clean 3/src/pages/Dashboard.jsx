@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowRight, Bell, ArrowUpRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { cachedQuery } from '../lib/cache';
 import { useAuth } from '../contexts/AuthContext';
 
 const kycBadge = (status) => {
@@ -76,14 +77,14 @@ export default function Dashboard() {
 
   async function fetchAll() {
     setLoading(true);
-    const [{ data: c }, { data: t }, { data: d }] = await Promise.all([
-      supabase.from('clients').select('*').order('created_at', { ascending: false }),
-      supabase.from('transactions').select('*').order('created_at', { ascending: false }),
-      supabase.from('disputes').select('*').order('created_at', { ascending: false }),
+    const [c, t, d] = await Promise.all([
+      cachedQuery('clients', () => supabase.from('clients').select('*').order('created_at', { ascending: false }).then(r => r.data || [])),
+      cachedQuery('transactions', () => supabase.from('transactions').select('*').order('created_at', { ascending: false }).then(r => r.data || [])),
+      cachedQuery('disputes', () => supabase.from('disputes').select('*').order('created_at', { ascending: false }).then(r => r.data || [])),
     ]);
-    setClients(c || []);
-    setTransactions(t || []);
-    setDisputes(d || []);
+    setClients(c);
+    setTransactions(t);
+    setDisputes(d);
 
     const monthMap = {};
     ;(t || []).forEach(tx => {
