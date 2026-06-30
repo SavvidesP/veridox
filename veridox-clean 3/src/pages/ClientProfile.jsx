@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Clock, Mail, Phone, Globe, Building, MapPin, ArrowLeftRight, ShieldAlert, User, CheckCircle, TrendingUp, TrendingDown, Activity as ActivityIcon } from 'lucide-react';
+import { ArrowLeft, FileText, Clock, Mail, Phone, Globe, Building, MapPin, ArrowLeftRight, ShieldAlert, User, CheckCircle, TrendingUp, TrendingDown, Activity as ActivityIcon, Pencil } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { tradescope } from '../lib/tradescope';
 import { invalidate } from '../lib/cache';
@@ -64,6 +64,9 @@ export default function ClientProfile() {
   const [tsAccount, setTsAccount] = useState(null);
   const [tsTrades, setTsTrades] = useState([]);
   const [tsLoading, setTsLoading] = useState(true);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [detailsForm, setDetailsForm] = useState({ email: '', phone: '', country: '' });
+  const [savingDetails, setSavingDetails] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -161,6 +164,28 @@ export default function ClientProfile() {
     setActivities(prev => [{ id: Date.now(), action: 'Status Changed', description: `Status updated to ${newStatus}`, created_at: new Date().toISOString() }, ...prev]);
   };
 
+  const openEditDetails = () => {
+    setDetailsForm({ email: client.email || '', phone: client.phone || '', country: client.country || '' });
+    setEditingDetails(true);
+  };
+  const saveDetails = async () => {
+    setSavingDetails(true);
+    const updates = {
+      email: detailsForm.email.trim() || null,
+      phone: detailsForm.phone.trim() || null,
+      country: detailsForm.country.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from('clients').update(updates).eq('id', id);
+    if (error) { setSavingDetails(false); alert('Could not save details: ' + error.message); return; }
+    invalidate('clients');
+    setClient(prev => ({ ...prev, ...updates }));
+    await supabase.from('activities').insert({ client_id: id, action: 'Details Updated', description: 'Personal details edited', created_by: user?.id });
+    setActivities(prev => [{ id: Date.now(), action: 'Details Updated', description: 'Personal details edited', created_at: new Date().toISOString() }, ...prev]);
+    setSavingDetails(false);
+    setEditingDetails(false);
+  };
+
   const addNote = async () => {
     if (!newNote.trim()) return;
     setSavingNote(true);
@@ -246,27 +271,49 @@ export default function ClientProfile() {
       {activeTab === 'Overview' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E5E7EB', padding: '24px' }}>
-            <div style={{ fontWeight: '700', fontSize: '14px', color: '#111827', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <User size={16} color="#6366F1" /> Personal Details
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ fontWeight: '700', fontSize: '14px', color: '#111827', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <User size={16} color="#6366F1" /> Personal Details
+              </div>
+              {!editingDetails ? (
+                <button onClick={openEditDetails} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 10px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '6px', color: '#6366F1', fontSize: '12px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                  <Pencil size={12} /> Edit
+                </button>
+              ) : (
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button onClick={() => setEditingDetails(false)} disabled={savingDetails} style={{ padding: '5px 10px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '6px', color: '#374151', fontSize: '12px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Cancel</button>
+                  <button onClick={saveDetails} disabled={savingDetails} style={{ padding: '5px 12px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '12px', fontWeight: '600', cursor: savingDetails ? 'not-allowed' : 'pointer', opacity: savingDetails ? 0.7 : 1, fontFamily: "'Inter', sans-serif" }}>{savingDetails ? 'Saving…' : 'Save'}</button>
+                </div>
+              )}
             </div>
             {[
-              { icon: Mail, label: 'Email', value: client.email },
-              { icon: Phone, label: 'Phone', value: client.phone },
-              { icon: MapPin, label: 'Country', value: client.country },
-              { icon: Building, label: 'Company', value: client.company_name },
-              { icon: Globe, label: 'Industry', value: client.industry },
-              { icon: Clock, label: 'Added', value: formatDate(client.created_at) },
-            ].map(({ icon: Icon, label, value }) => value ? (
+              { icon: Mail, label: 'Email', key: 'email', type: 'email' },
+              { icon: Phone, label: 'Phone', key: 'phone', type: 'tel' },
+              { icon: MapPin, label: 'Country', key: 'country', type: 'text' },
+            ].map(({ icon: Icon, label, key, type }) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid #F9FAFB' }}>
                 <div style={{ width: '32px', height: '32px', background: '#F3F4F6', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Icon size={14} color="#6B7280" />
                 </div>
-                <div>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: '600' }}>{label}</div>
-                  <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500' }}>{value}</div>
+                  {editingDetails ? (
+                    <input type={type} value={detailsForm[key]} onChange={e => setDetailsForm(p => ({ ...p, [key]: e.target.value }))} placeholder={label} style={{ width: '100%', boxSizing: 'border-box', marginTop: '3px', padding: '7px 9px', border: '1px solid #E5E7EB', borderRadius: '6px', fontSize: '13px', color: '#111827', outline: 'none', fontFamily: "'Inter', sans-serif" }} />
+                  ) : (
+                    <div style={{ fontSize: '13px', color: client[key] ? '#111827' : '#9CA3AF', fontWeight: '500' }}>{client[key] || '—'}</div>
+                  )}
                 </div>
               </div>
-            ) : null)}
+            ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0' }}>
+              <div style={{ width: '32px', height: '32px', background: '#F3F4F6', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Clock size={14} color="#6B7280" />
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: '600' }}>Added</div>
+                <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500' }}>{formatDate(client.created_at)}</div>
+              </div>
+            </div>
           </div>
 
           <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E5E7EB', padding: '24px' }}>
