@@ -243,6 +243,11 @@ export default function TradingAccountDetail() {
       return next;
     });
   }
+  // Setting a Closed-At time means the position is closed → flip status to 'closed' automatically,
+  // so on Save the trade closes exactly at the entered time (and counts toward realized Total P&L).
+  function setTradeClosedAt(value) {
+    setTradeForm(prev => ({ ...prev, closed_at: value, ...(value ? { status: 'closed' } : {}) }));
+  }
   // Bidirectional link (other direction): editing this trade's profit flows into the account balance/equity.
   function setTradeProfit(value) {
     setTradeForm(prev => {
@@ -528,7 +533,7 @@ export default function TradingAccountDetail() {
                         {fl.options.map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                     ) : (
-                      <input type={fl.input === 'datetime' ? 'datetime-local' : 'number'} step={fl.step} value={tradeForm[fl.key] ?? ''} onChange={fl.key === 'profit' ? (e => setTradeProfit(e.target.value)) : (e => setTradeForm(p => ({ ...p, [fl.key]: e.target.value })))} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', border: '1px solid #E5E7EB', borderRadius: '8px', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: fl.key === 'profit' && toNum(tradeForm.profit) < 0 ? '#DC2626' : '#111827', fontWeight: fl.key === 'profit' ? '700' : '400' }} />
+                      <input type={fl.input === 'datetime' ? 'datetime-local' : 'number'} step={fl.step} value={tradeForm[fl.key] ?? ''} onChange={fl.key === 'profit' ? (e => setTradeProfit(e.target.value)) : fl.key === 'closed_at' ? (e => setTradeClosedAt(e.target.value)) : (e => setTradeForm(p => ({ ...p, [fl.key]: e.target.value })))} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', border: '1px solid #E5E7EB', borderRadius: '8px', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: fl.key === 'profit' && toNum(tradeForm.profit) < 0 ? '#DC2626' : '#111827', fontWeight: fl.key === 'profit' ? '700' : '400' }} />
                     )}
                   </div>
                 ))}
