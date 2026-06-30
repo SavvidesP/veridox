@@ -107,6 +107,7 @@ export default function TradingAccountDetail() {
   const [tradeHasOriginal, setTradeHasOriginal] = useState(false);
   const [tradeChecking, setTradeChecking] = useState(false);
   const [floatPnL, setFloatPnL] = useState(0); // open-positions' floating P&L = equity − balance (captured when a modal opens)
+  const [linkBase, setLinkBase] = useState({ balance: 0, profit: 0 }); // captured at trade-modal open for the bidirectional Balance ↔ trade-profit link
 
   async function loadAdjustments() {
     const { data, error } = await supabase
@@ -215,6 +216,7 @@ export default function TradingAccountDetail() {
     TRADE_ACCOUNT_FIELDS.forEach(fl => { f['acct_' + fl.key] = account?.[fl.key] ?? 0; });
     setTradeForm(f);
     setFloatPnL(round2(toNum(account?.equity) - toNum(account?.balance)));
+    setLinkBase({ balance: toNum(account?.balance), profit: toNum(tr.profit) });
     setEditTrade(tr);
     // Can we revert? Only if this trade already has recorded adjustments (original captured).
     // Reset + flag while checking so Revert stays disabled until we actually know (no stale
@@ -230,11 +232,23 @@ export default function TradingAccountDetail() {
   function setTradeAcctField(key, value) {
     setTradeForm(prev => {
       const next = { ...prev, ['acct_' + key]: value };
-      if (key === 'balance') next.acct_equity = deriveEquity(value, floatPnL);
+      if (key === 'balance') {
+        next.acct_equity = deriveEquity(value, floatPnL);
+        // Bidirectional link: balance change flows into this trade's profit by the same delta.
+        next.profit = round2(linkBase.profit + (toNum(value) - linkBase.balance));
+      }
       if (key === 'balance' || key === 'margin' || key === 'equity') {
         next.acct_free_margin = deriveFreeMargin(next.acct_equity, next.acct_margin);
       }
       return next;
+    });
+  }
+  // Bidirectional link (other direction): editing this trade's profit flows into the account balance/equity.
+  function setTradeProfit(value) {
+    setTradeForm(prev => {
+      const newBalance = round2(linkBase.balance + (toNum(value) - linkBase.profit));
+      const equity = deriveEquity(newBalance, floatPnL);
+      return { ...prev, profit: value, acct_balance: newBalance, acct_equity: equity, acct_free_margin: deriveFreeMargin(equity, prev.acct_margin) };
     });
   }
 
@@ -514,7 +528,7 @@ export default function TradingAccountDetail() {
                         {fl.options.map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                     ) : (
-                      <input type={fl.input === 'datetime' ? 'datetime-local' : 'number'} step={fl.step} value={tradeForm[fl.key] ?? ''} onChange={e => setTradeForm(p => ({ ...p, [fl.key]: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', border: '1px solid #E5E7EB', borderRadius: '8px', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: '#111827' }} />
+                      <input type={fl.input === 'datetime' ? 'datetime-local' : 'number'} step={fl.step} value={tradeForm[fl.key] ?? ''} onChange={fl.key === 'profit' ? (e => setTradeProfit(e.target.value)) : (e => setTradeForm(p => ({ ...p, [fl.key]: e.target.value })))} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', border: '1px solid #E5E7EB', borderRadius: '8px', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: fl.key === 'profit' && toNum(tradeForm.profit) < 0 ? '#DC2626' : '#111827', fontWeight: fl.key === 'profit' ? '700' : '400' }} />
                     )}
                   </div>
                 ))}
