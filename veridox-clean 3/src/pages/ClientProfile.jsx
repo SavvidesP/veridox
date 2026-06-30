@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Clock, Mail, Phone, Globe, Building, MapPin, ArrowLeftRight, ShieldAlert, User, CheckCircle } from 'lucide-react';
+import { ArrowLeft, FileText, Clock, Mail, Phone, Globe, Building, MapPin, ArrowLeftRight, ShieldAlert, User, CheckCircle, TrendingUp, TrendingDown, Activity as ActivityIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { tradescope } from '../lib/tradescope';
 import { useAuth } from '../contexts/AuthContext';
 
 const statusConfig = {
@@ -32,6 +33,17 @@ function formatAmount(v) {
   return Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function fmtUsd(v) {
+  return `$${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+function fmtPrice(v) {
+  return v == null ? '—' : Number(v).toFixed(5);
+}
+function fmtTime(v) {
+  if (!v) return '—';
+  return new Date(v).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
 const tabs = ['Overview', 'Transactions', 'Disputes', 'Documents', 'Notes', 'Activity'];
 
 export default function ClientProfile() {
@@ -48,6 +60,9 @@ export default function ClientProfile() {
   const [newNote, setNewNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [activeTab, setActiveTab] = useState('Overview');
+  const [tsAccount, setTsAccount] = useState(null);
+  const [tsTrades, setTsTrades] = useState([]);
+  const [tsLoading, setTsLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
@@ -81,6 +96,59 @@ export default function ClientProfile() {
       }
     });
   }, [id]);
+
+  // ── Live TradeScope trading activity (cross-platform) ──
+  useEffect(() => {
+    if (!client?.id) return;
+    let channel, poll, active = true;
+
+    async function loadTrades(traderId) {
+      const { data } = await tradescope.from('trades').select('*').eq('trader_id', traderId).order('opened_at', { ascending: false });
+      if (active) setTsTrades(data || []);
+    }
+    async function refreshAccount(traderId) {
+      const { data } = await tradescope.from('trader_accounts').select('*').eq('id', traderId).maybeSingle();
+      if (active && data) setTsAccount(data);
+    }
+
+    async function resolveAndLoad() {
+      setTsLoading(true);
+      // 1) explicit link via sales_leads.tradescope_trader_id, else 2) match by email
+      let account = null;
+      const { data: lead } = await supabase
+        .from('sales_leads')
+        .select('tradescope_trader_id, tradescope_email')
+        .eq('converted_client_id', client.id)
+        .not('tradescope_trader_id', 'is', null)
+        .maybeSingle();
+
+      if (lead?.tradescope_trader_id) {
+        const { data } = await tradescope.from('trader_accounts').select('*').eq('id', lead.tradescope_trader_id).maybeSingle();
+        account = data;
+      }
+      if (!account && (lead?.tradescope_email || client.email)) {
+        const { data } = await tradescope.from('trader_accounts').select('*').eq('email', lead?.tradescope_email || client.email).maybeSingle();
+        account = data;
+      }
+
+      if (!active) return;
+      if (!account) { setTsAccount(null); setTsTrades([]); setTsLoading(false); return; }
+      setTsAccount(account);
+      await loadTrades(account.id);
+      setTsLoading(false);
+
+      // Realtime push (new/closed trades + balance changes) with a polling fallback
+      channel = tradescope
+        .channel(`ts-trades-${account.id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'trades', filter: `trader_id=eq.${account.id}` }, () => { loadTrades(account.id); refreshAccount(account.id); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'trader_accounts', filter: `id=eq.${account.id}` }, (p) => { if (active && p.new) setTsAccount(prev => ({ ...prev, ...p.new })); })
+        .subscribe();
+      poll = setInterval(() => { loadTrades(account.id); refreshAccount(account.id); }, 8000);
+    }
+
+    resolveAndLoad();
+    return () => { active = false; if (channel) tradescope.removeChannel(channel); if (poll) clearInterval(poll); };
+  }, [client?.id, client?.email]);
 
   const updateStatus = async (newStatus) => {
     await supabase.from('clients').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id);
@@ -316,21 +384,103 @@ export default function ClientProfile() {
 
       {/* Activity Tab */}
       {activeTab === 'Activity' && (
-        <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E5E7EB', padding: '24px' }}>
-          {activities.length === 0 ? (
-            <div style={{ color: '#9CA3AF', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No activity yet.</div>
-          ) : activities.map(act => (
-            <div key={act.id} style={{ display: 'flex', gap: '12px', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid #F9FAFB' }}>
-              <div style={{ width: '32px', height: '32px', background: '#EEF2FF', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Clock size={14} color="#6366F1" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+          {/* Live TradeScope trading activity */}
+          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E5E7EB', padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ActivityIcon size={16} color="#6366F1" />
+                <span style={{ fontWeight: '700', fontSize: '14px', color: '#111827' }}>Live Trading Activity</span>
+                <span style={{ fontSize: '11px', color: '#9CA3AF' }}>· TradeScope</span>
               </div>
-              <div>
-                <div style={{ color: '#111827', fontSize: '13px', fontWeight: '600' }}>{act.action}</div>
-                {act.description && <div style={{ color: '#6B7280', fontSize: '12px', marginTop: '2px' }}>{act.description}</div>}
-                <div style={{ color: '#9CA3AF', fontSize: '11px', marginTop: '4px' }}>{new Date(act.created_at).toLocaleString()}</div>
-              </div>
+              {tsAccount && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', border: '1px solid #BBF7D0', borderRadius: '20px', padding: '3px 10px' }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22C55E', boxShadow: '0 0 0 3px rgba(34,197,94,0.15)' }} />
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#16A34A' }}>Live</span>
+                </div>
+              )}
             </div>
-          ))}
+
+            {tsLoading ? (
+              <div style={{ color: '#9CA3AF', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Connecting to TradeScope…</div>
+            ) : !tsAccount ? (
+              <div style={{ color: '#9CA3AF', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No linked TradeScope account for this client.</div>
+            ) : (
+              <>
+                {/* Account summary */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', marginBottom: '20px' }}>
+                  {[
+                    { label: 'Balance', value: fmtUsd(tsAccount.balance) },
+                    { label: 'Equity', value: fmtUsd(tsAccount.equity) },
+                    { label: 'Leverage', value: `1:${tsAccount.leverage || 100}` },
+                    { label: 'Open', value: tsTrades.filter(t => t.status === 'open').length },
+                    { label: 'Closed', value: tsTrades.filter(t => t.status === 'closed').length },
+                  ].map(s => (
+                    <div key={s.label} style={{ background: '#F9FAFB', borderRadius: '8px', padding: '10px 12px' }}>
+                      <div style={{ fontSize: '10px', color: '#9CA3AF', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{s.label}</div>
+                      <div style={{ fontSize: '15px', fontWeight: '700', color: '#111827', marginTop: '3px' }}>{s.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Trades feed */}
+                {tsTrades.length === 0 ? (
+                  <div style={{ color: '#9CA3AF', fontSize: '13px', textAlign: 'center', padding: '16px 0' }}>No trades yet.</div>
+                ) : (
+                  <div style={{ maxHeight: '440px', overflowY: 'auto' }}>
+                    {tsTrades.map(tr => {
+                      const buy = tr.type?.toLowerCase() === 'buy';
+                      const open = tr.status === 'open';
+                      const Icon = buy ? TrendingUp : TrendingDown;
+                      return (
+                        <div key={tr.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 0', borderBottom: '1px solid #F3F4F6' }}>
+                          <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: buy ? '#DCFCE7' : '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Icon size={15} color={buy ? '#16A34A' : '#DC2626'} />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>{tr.symbol}</span>
+                              <span style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', color: buy ? '#16A34A' : '#DC2626' }}>{tr.type}</span>
+                              <span style={{ fontSize: '11px', color: '#9CA3AF' }}>{tr.lot_size} lot</span>
+                              {open && <span style={{ fontSize: '10px', fontWeight: '700', color: '#2563EB', border: '1px solid #BFDBFE', borderRadius: '4px', padding: '1px 6px' }}>OPEN</span>}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#6B7280', marginTop: '2px' }}>
+                              {fmtPrice(tr.open_price)}{!open && tr.close_price != null ? ` → ${fmtPrice(tr.close_price)}` : ''} · {fmtTime(open ? tr.opened_at : tr.closed_at)}
+                            </div>
+                          </div>
+                          {!open && (
+                            <div style={{ fontSize: '13px', fontWeight: '700', color: (tr.profit || 0) >= 0 ? '#16A34A' : '#DC2626', flexShrink: 0 }}>
+                              {(tr.profit || 0) >= 0 ? '+' : ''}{fmtUsd(tr.profit)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* CRM activity */}
+          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E5E7EB', padding: '24px' }}>
+            <div style={{ fontWeight: '700', fontSize: '14px', color: '#111827', marginBottom: '16px' }}>CRM Activity</div>
+            {activities.length === 0 ? (
+              <div style={{ color: '#9CA3AF', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No activity yet.</div>
+            ) : activities.map(act => (
+              <div key={act.id} style={{ display: 'flex', gap: '12px', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid #F9FAFB' }}>
+                <div style={{ width: '32px', height: '32px', background: '#EEF2FF', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Clock size={14} color="#6366F1" />
+                </div>
+                <div>
+                  <div style={{ color: '#111827', fontSize: '13px', fontWeight: '600' }}>{act.action}</div>
+                  {act.description && <div style={{ color: '#6B7280', fontSize: '12px', marginTop: '2px' }}>{act.description}</div>}
+                  <div style={{ color: '#9CA3AF', fontSize: '11px', marginTop: '4px' }}>{new Date(act.created_at).toLocaleString()}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
