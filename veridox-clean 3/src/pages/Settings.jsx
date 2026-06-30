@@ -129,7 +129,11 @@ export default function Settings() {
     const { data, error } = await supabase.functions.invoke('reset-member-password', { body: { targetUserId: member.id } });
     setResetingId(null);
     if (error || data?.error) {
-      setResetResult({ name: member.full_name || member.email, error: data?.error || error?.message || 'Reset failed' });
+      let msg = data?.error || error?.message || 'Reset failed';
+      if (error?.context && typeof error.context.json === 'function') {
+        try { const b = await error.context.json(); if (b?.error) msg = b.error; } catch (_) { /* ignore */ }
+      }
+      setResetResult({ name: member.full_name || member.email, error: msg });
     } else {
       setResetResult({ name: member.full_name || member.email, email: member.email, password: data.password });
     }
