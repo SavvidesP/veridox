@@ -84,7 +84,7 @@ export default function Settings() {
     if (!firstName.trim() || !lastName.trim()) { setError('Enter first and last name.'); return; }
     setCreating(true); setError('');
     const username = `${slug(firstName)}.${slug(lastName)}`;
-    const email = `${username}.${Math.floor(1000 + Math.random() * 9000)}@veridox.team`;
+    const email = `${username}.${Math.floor(1000 + Math.random() * 9000)}@veridox.net`;
     const password = genPassword();
 
     // 1) Create the auth user (separate client → admin stays logged in)
