@@ -216,6 +216,7 @@ export default function TradingAccountDetail() {
                       <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>{tr.symbol}</span>
                       <span style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', color: buy ? '#16A34A' : '#DC2626' }}>{tr.type}</span>
                       <span style={{ fontSize: '11px', color: '#9CA3AF' }}>{tr.lot_size} lot</span>
+                      <span style={{ fontSize: '10px', fontWeight: '700', color: '#6366F1', border: '1px solid #C7D2FE', borderRadius: '4px', padding: '1px 6px' }}>1:{tr.leverage || 100}</span>
                       {open && <span style={{ fontSize: '10px', fontWeight: '700', color: '#2563EB', border: '1px solid #BFDBFE', borderRadius: '4px', padding: '1px 6px' }}>OPEN</span>}
                     </div>
                     <div style={{ fontSize: '11px', color: '#6B7280', marginTop: '2px' }}>
