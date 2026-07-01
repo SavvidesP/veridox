@@ -210,8 +210,8 @@ export default function TransactionDetail() {
 
   return (
     <div style={{ padding: '32px', fontFamily: "'Inter', sans-serif", maxWidth: '1100px' }}>
-      <button onClick={() => navigate('/transactions')} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#64748B', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', marginBottom: '20px', fontFamily: 'Inter, sans-serif' }}>
-        <ArrowLeft size={15} /> Back to Transactions
+      <button onClick={() => navigate(-1)} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#64748B', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', marginBottom: '20px', fontFamily: 'Inter, sans-serif' }}>
+        <ArrowLeft size={15} /> Back
       </button>
 
       {/* Header */}
