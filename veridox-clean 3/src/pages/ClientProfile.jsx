@@ -25,6 +25,16 @@ const txStatusStyle = (s) => {
   return { background: '#FEF9C3', color: '#854D0E' };
 };
 
+// When a transaction has an initiated withdrawal, its status in the client's
+// Transactions tab reflects the withdrawal's approval state instead of the deposit status.
+const WITHDRAWAL_STATUS_DISPLAY = {
+  pending: { label: 'Pending Withdrawal', background: '#FEF9C3', color: '#854D0E' },
+  under_review: { label: 'Withdrawal Under Review', background: '#EEF2FF', color: '#4338CA' },
+  approved: { label: 'Withdrawal Approved', background: '#DCFCE7', color: '#166534' },
+  rejected: { label: 'Withdrawal Rejected', background: '#FEE2E2', color: '#991B1B' },
+  completed: { label: 'Withdrawal Completed', background: '#F0FDF4', color: '#166534' },
+};
+
 function formatDate(v) {
   if (!v) return '-';
   return new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -58,6 +68,7 @@ export default function ClientProfile() {
   const [notes, setNotes] = useState([]);
   const [activities, setActivities] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [withdrawalStatusByTx, setWithdrawalStatusByTx] = useState({});
   const [disputes, setDisputes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState('');
@@ -95,9 +106,20 @@ export default function ClientProfile() {
           supabase.from('disputes').select('*')
             .ilike('client_name', `${c.data.first_name || ''} ${c.data.last_name || ''}`.trim())
             .order('created_at', { ascending: false }),
-        ]).then(([t, disp]) => {
-          setTransactions(t.data || []);
+        ]).then(async ([t, disp]) => {
+          const txs = t.data || [];
+          setTransactions(txs);
           setDisputes(disp.data || []);
+          // Overlay withdrawal state onto the matching transactions' status
+          const txIds = txs.map(x => x.id);
+          if (txIds.length) {
+            const { data: wds } = await supabase.from('withdrawal_approvals')
+              .select('source_transaction_id, status')
+              .in('source_transaction_id', txIds);
+            const map = {};
+            (wds || []).forEach(w => { if (w.source_transaction_id) map[w.source_transaction_id] = w.status; });
+            setWithdrawalStatusByTx(map);
+          }
           setLoading(false);
         });
       } else {
@@ -384,7 +406,11 @@ export default function ClientProfile() {
                     <td style={{ padding: '11px 16px', color: '#111827', fontSize: '12px', fontWeight: '600' }}>{formatAmount(t.amount)} {t.account_currency}</td>
                     <td style={{ padding: '11px 16px', color: '#374151', fontSize: '12px' }}>{t.psp_actual || '-'}</td>
                     <td style={{ padding: '11px 16px' }}>
-                      {t.transaction_approval && <span style={{ ...txStatusStyle(t.transaction_approval), padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}>{t.transaction_approval}</span>}
+                      {(() => {
+                        const wd = WITHDRAWAL_STATUS_DISPLAY[withdrawalStatusByTx[t.id]];
+                        if (wd) return <span style={{ background: wd.background, color: wd.color, padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}>{wd.label}</span>;
+                        return t.transaction_approval && <span style={{ ...txStatusStyle(t.transaction_approval), padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}>{t.transaction_approval}</span>;
+                      })()}
                     </td>
                   </tr>
                 ))}
