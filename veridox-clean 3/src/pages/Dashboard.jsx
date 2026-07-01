@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { cachedQuery } from '../lib/cache';
 import { useAuth } from '../contexts/AuthContext';
 import ConversionAgentDashboard from './ConversionAgentDashboard';
+import ConversionManagerDashboard from './ConversionManagerDashboard';
 
 const kycBadge = (status) => {
   const styles = {
@@ -70,7 +71,8 @@ export default function Dashboard() {
   const { profile } = useAuth();
   const role = profile?.role;
   if (role === 'conversion_agent') return <ConversionAgentDashboard />;
-  // retention_agent / conversion_manager / retention_manager → own dashboards (next phases).
+  if (role === 'conversion_manager') return <ConversionManagerDashboard />;
+  // retention_agent / retention_manager → own dashboards (next phases).
   // admin / manager (and any legacy role) → the full overview below.
   return <AdminDashboard />;
 }
