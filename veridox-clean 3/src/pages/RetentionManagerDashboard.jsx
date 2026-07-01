@@ -30,6 +30,7 @@ export default function RetentionManagerDashboard() {
   const [leads, setLeads] = useState([]);
   const [clientById, setClientById] = useState({});
   const [tx, setTx] = useState([]);
+  const [bonusByAgent, setBonusByAgent] = useState({}); // agent_id → total bonus amount
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
 
@@ -37,10 +38,14 @@ export default function RetentionManagerDashboard() {
 
   async function fetchAll() {
     setLoading(true);
-    const [{ data: agentData }, { data: leadData }] = await Promise.all([
+    const [{ data: agentData }, { data: leadData }, { data: bonusData }] = await Promise.all([
       supabase.from('profiles').select('id, full_name, role').eq('role', 'retention_agent').eq('active', true),
       supabase.from('sales_leads').select('id, first_name, last_name, converted_client_id, retention_agent_id').not('retention_agent_id', 'is', null).not('converted_client_id', 'is', null),
+      supabase.from('agent_bonuses').select('agent_id, amount'),
     ]);
+    const bmap = {};
+    (bonusData || []).forEach(b => { bmap[b.agent_id] = (bmap[b.agent_id] || 0) + (parseFloat(b.amount) || 0); });
+    setBonusByAgent(bmap);
     const clientIds = (leadData || []).map(l => l.converted_client_id);
     let clientsMap = {}, txData = [];
     if (clientIds.length) {
@@ -80,7 +85,7 @@ export default function RetentionManagerDashboard() {
       };
     }).sort((x, y) => y.volume - x.volume);
     const volume = clients.reduce((s, c) => s + c.volume, 0);
-    return { agent: a, count: clients.length, volume, clients };
+    return { agent: a, count: clients.length, volume, bonus: bonusByAgent[a.id] || 0, clients };
   }).sort((a, b) => b.volume - a.volume);
 
   const totalClients = leads.length;
@@ -120,15 +125,15 @@ export default function RetentionManagerDashboard() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '600px' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-              {['Agent', 'Clients', 'Volume Deposited'].map(h => <th key={h} style={th}>{h}</th>)}
+              {['Agent', 'Clients', 'Volume Deposited', 'Bonuses'].map(h => <th key={h} style={th}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={3} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>Loading…</td></tr>
+              <tr><td colSpan={4} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>Loading…</td></tr>
             ) : agentStats.length === 0 ? (
-              <tr><td colSpan={3} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>No retention agents yet.</td></tr>
-            ) : agentStats.map(({ agent, count, volume, clients }) => {
+              <tr><td colSpan={4} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>No retention agents yet.</td></tr>
+            ) : agentStats.map(({ agent, count, volume, bonus, clients }) => {
               const open = expanded === agent.id;
               return (
                 <Fragment key={agent.id}>
@@ -144,10 +149,11 @@ export default function RetentionManagerDashboard() {
                     </td>
                     <td style={{ padding: '14px 16px', fontSize: '13px', color: '#111827' }}>{count}</td>
                     <td style={{ padding: '14px 16px', fontSize: '13px', color: '#16A34A', fontWeight: '600', fontFamily: 'monospace' }}>{money(volume)}</td>
+                    <td style={{ padding: '14px 16px', fontSize: '13px', color: '#7C3AED', fontWeight: '600', fontFamily: 'monospace' }}>{money(bonus)}</td>
                   </tr>
                   {open && (
                     <tr>
-                      <td colSpan={3} style={{ padding: '0 16px 14px 38px', background: '#F9FAFB' }}>
+                      <td colSpan={4} style={{ padding: '0 16px 14px 38px', background: '#F9FAFB' }}>
                         {clients.length === 0 ? (
                           <div style={{ padding: '12px 0', color: '#9CA3AF', fontSize: '12px' }}>No clients assigned.</div>
                         ) : (
