@@ -216,6 +216,9 @@ export default function ConvertedClients() {
   const [filterMethod, setFilterMethod] = useState('all');
   const [filterPsp, setFilterPsp] = useState('all');
   const [filterProcessor, setFilterProcessor] = useState('all');
+  const [colFilters, setColFilters] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('veridox-converted-colfilters')) || {}; } catch { return {}; }
+  });
 
   const [importing, setImporting] = useState(false);
   const [showImportMenu, setShowImportMenu] = useState(false);
@@ -228,6 +231,10 @@ export default function ConvertedClients() {
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => { fetchConverted(); }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem('veridox-converted-colfilters', JSON.stringify(colFilters)); } catch { /* ignore */ }
+  }, [colFilters]);
 
   // Auto-refresh: re-fetch (silently) when transactions/leads change in real time,
   // or when the tab regains focus — so newly imported deposits show up (and their
@@ -377,6 +384,30 @@ export default function ConvertedClients() {
     });
   }
 
+  // Per-column filters — label (header), fkey (filter input), get (searchable text). Order matches the row cells.
+  const CC_COLUMNS = [
+    { label: 'Client',                 fkey: 'client',     get: c => `${c.first_name || ''} ${c.last_name || ''} ${c.phone || ''}` },
+    { label: 'Company',                fkey: 'company',    get: c => c.company_name || '' },
+    { label: 'Email',                  fkey: 'email',      get: c => c.email || '' },
+    { label: 'Country',                fkey: 'country',    get: c => c.country || '' },
+    { label: 'Source',                 fkey: 'source',     get: c => c.lead_source || '' },
+    { label: 'Value',                  fkey: 'value',      get: c => String(c.estimated_value ?? '') },
+    { label: 'KYC',                    fkey: 'kyc',        get: c => c.status || '' },
+    { label: 'Balance',                fkey: 'balance',    get: c => String(tradeFor(c)?.balance ?? '') },
+    { label: 'Equity',                 fkey: 'equity',     get: c => String(tradeFor(c)?.equity ?? '') },
+    { label: 'Margin',                 fkey: 'margin',     get: c => String(tradeFor(c)?.margin ?? '') },
+    { label: 'Free Margin',            fkey: 'freemargin', get: c => String(tradeFor(c)?.free_margin ?? '') },
+    { label: 'Leverage',               fkey: 'leverage',   get: c => String(tradeFor(c)?.leverage ?? '') },
+    { label: 'Open',                   fkey: 'open',       get: c => String(tradeFor(c)?.open ?? '') },
+    { label: 'Closed',                 fkey: 'closed',     get: c => String(tradeFor(c)?.closed ?? '') },
+    { label: 'P&L',                    fkey: 'pnl',        get: c => String(tradeFor(c)?.pnl ?? '') },
+    { label: 'Payment Methods',        fkey: 'methods',    get: c => distinctFor(c.id, 'payment_method').join(' ') },
+    { label: 'TradeScope Credentials', fkey: 'credentials', get: c => c.tradescope_email || '' },
+    { label: 'Assigned To',            fkey: 'assigned',   get: c => c.assigned_to || '' },
+    { label: 'Retention Agent',        fkey: 'retention',  get: c => retentionAgents.find(a => a.id === c.retention_agent_id)?.full_name || '' },
+    { label: 'Converted',              fkey: 'converted',  get: c => formatDate(c.converted_at) },
+  ];
+
   const filtered = clients.filter(c => {
     const q = search.trim().toLowerCase();
     if (q) {
@@ -387,14 +418,20 @@ export default function ConvertedClients() {
         c.company_name?.toLowerCase().includes(q);
       if (!hit) return false;
     }
+    const matchCols = CC_COLUMNS.every(col => {
+      const fv = (colFilters[col.fkey] || '').trim().toLowerCase();
+      return !fv || col.get(c).toLowerCase().includes(fv);
+    });
+    if (!matchCols) return false;
     return matchesTxFilters(c, { method: filterMethod, psp: filterPsp, processor: filterProcessor });
   });
 
   const totalValue = clients.reduce((s, c) => s + (parseFloat(c.estimated_value) || 0), 0);
   const withTradeScope = clients.filter(c => c.tradescope_email).length;
 
-  const clearFilters = () => { setFilterMethod('all'); setFilterPsp('all'); setFilterProcessor('all'); };
-  const filtersActive = filterMethod !== 'all' || filterPsp !== 'all' || filterProcessor !== 'all';
+  const clearFilters = () => { setFilterMethod('all'); setFilterPsp('all'); setFilterProcessor('all'); setColFilters({}); setSearch(''); };
+  const hasColFilters = Object.values(colFilters).some(v => (v || '').trim() !== '');
+  const filtersActive = filterMethod !== 'all' || filterPsp !== 'all' || filterProcessor !== 'all' || hasColFilters;
 
   // Close the Import menu when clicking outside it
   useEffect(() => {
@@ -690,8 +727,16 @@ export default function ConvertedClients() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1120px' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-              {['Client', 'Company', 'Email', 'Country', 'Source', 'Value', 'KYC', 'Balance', 'Equity', 'Margin', 'Free Margin', 'Leverage', 'Open', 'Closed', 'P&L', 'Payment Methods', 'TradeScope Credentials', 'Assigned To', 'Retention Agent', 'Converted'].map(h => (
-                <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#9CA3AF', letterSpacing: '0.6px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+              {CC_COLUMNS.map(col => (
+                <th key={col.fkey} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#9CA3AF', letterSpacing: '0.6px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{col.label}</th>
+              ))}
+            </tr>
+            <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
+              {CC_COLUMNS.map(col => (
+                <th key={col.fkey + '-f'} style={{ padding: '0 16px 8px' }}>
+                  <input value={colFilters[col.fkey] || ''} onChange={e => setColFilters(f => ({ ...f, [col.fkey]: e.target.value }))} placeholder="Filter…"
+                    style={{ width: '100%', minWidth: '80px', boxSizing: 'border-box', padding: '5px 8px', border: '1px solid #E5E7EB', borderRadius: '5px', fontSize: '11px', fontWeight: '400', color: '#111827', background: '#fff', outline: 'none', textTransform: 'none', letterSpacing: 'normal' }} />
+                </th>
               ))}
             </tr>
           </thead>
