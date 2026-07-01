@@ -1,7 +1,47 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Copy, Check, Eye, EyeOff, Upload, Download, X, Search, CheckSquare, Square } from 'lucide-react';
+import { Copy, Check, Eye, EyeOff, Upload, Download, X, Search, CheckSquare, Square, FileText, ChevronDown } from 'lucide-react';
+
+// ── TradeScope account provisioning (same as SalesCRM convert flow) ──
+const TRADESCOPE_URL = 'https://atqucerzdqzchdgylmfo.supabase.co';
+const TRADESCOPE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF0cXVjZXJ6ZHF6Y2hkZ3lsbWZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MjM5MzMyNiwiZXhwIjoyMDk3OTY5MzI2fQ.JAdc5f9FRkMcamUcwDbp1phY16WYiJSpGrmZgCHkpUc';
+
+function generatePassword() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
+  let pass = '';
+  for (let i = 0; i < 12; i++) pass += chars[Math.floor(Math.random() * chars.length)];
+  return pass;
+}
+
+// Build a login username for TradeScope when the import has no email of its own.
+function generateTradescopeEmail(first, last) {
+  const base = `${first || ''}.${last || ''}`.toLowerCase().replace(/[^a-z0-9.]/g, '').replace(/^\.+|\.+$/g, '') || 'client';
+  const rand = Math.random().toString(36).slice(2, 6);
+  return `${base}.${rand}@tradescope.net`;
+}
+
+// Creates the TradeScope auth user + trader account, funded with `amount`. Returns the trader id.
+async function createTradescopeAccount(email, password, name, amount) {
+  const balance = amount > 0 ? amount : 10000;
+  const authRes = await fetch(`${TRADESCOPE_URL}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': TRADESCOPE_SERVICE_KEY, 'Authorization': `Bearer ${TRADESCOPE_SERVICE_KEY}` },
+    body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { full_name: name } }),
+  });
+  const authData = await authRes.json();
+  if (!authRes.ok || !authData.id) throw new Error(authData.message || 'Failed to create auth user');
+
+  const dbRes = await fetch(`${TRADESCOPE_URL}/rest/v1/trader_accounts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': TRADESCOPE_SERVICE_KEY, 'Authorization': `Bearer ${TRADESCOPE_SERVICE_KEY}`, 'Prefer': 'return=representation' },
+    body: JSON.stringify({ id: authData.id, email, balance, equity: balance, margin: 0, free_margin: balance, currency: 'USD', leverage: 100 }),
+  });
+  const dbData = await dbRes.json();
+  if (!dbRes.ok) throw new Error(dbData.message || 'Failed to create trader account');
+
+  return authData.id;
+}
 
 const sourceBadge = (s) => {
   const map = {
@@ -69,6 +109,25 @@ const ALL_EXPORT_COLUMNS = [
   { key: 'payment_methods',      label: 'Payment Methods' },
   { key: 'psps',                 label: 'PSPs' },
   { key: 'payment_processors',   label: 'Payment Processors' },
+];
+
+// ── Import template: simple 5-column format. TradeScope credentials are
+//    auto-generated here in the CRM on import — no login columns needed. ──
+const TEMPLATE_HEADERS = ['Name', 'Surname', 'Phone', 'Country', 'Amount'];
+
+const TEMPLATE_EXAMPLE_ROWS = [
+  { 'Name': 'John',  'Surname': 'Doe',     'Phone': '+357 99 123456',  'Country': 'Cyprus', 'Amount': 5000 },
+  { 'Name': 'Maria', 'Surname': 'Ioannou', 'Phone': '+30 691 1122334', 'Country': 'Greece', 'Amount': 2500 },
+];
+
+const TEMPLATE_INSTRUCTIONS = [
+  { Column: 'Name',    Required: 'Yes', 'Allowed values / example': 'John' },
+  { Column: 'Surname', Required: 'Yes', 'Allowed values / example': 'Doe' },
+  { Column: 'Phone',   Required: 'No',  'Allowed values / example': '+357 99 123456' },
+  { Column: 'Country', Required: 'No',  'Allowed values / example': 'Cyprus' },
+  { Column: 'Amount',  Required: 'No',  'Allowed values / example': 'Number, e.g. 5000 — funds the TradeScope account & shows as the client Value' },
+  { Column: '',        Required: '',    'Allowed values / example': '' },
+  { Column: 'Note',    Required: '',    'Allowed values / example': 'TradeScope login (email + password) is generated automatically on import — view it on each client row.' },
 ];
 
 function CopyButton({ text }) {
@@ -144,7 +203,9 @@ export default function ConvertedClients() {
   const [filterProcessor, setFilterProcessor] = useState('all');
 
   const [importing, setImporting] = useState(false);
+  const [showImportMenu, setShowImportMenu] = useState(false);
   const fileRef = useRef();
+  const importMenuRef = useRef();
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [selectedCols, setSelectedCols] = useState(ALL_EXPORT_COLUMNS.map(c => c.key));
@@ -274,7 +335,29 @@ export default function ConvertedClients() {
   const clearFilters = () => { setFilterMethod('all'); setFilterPsp('all'); setFilterProcessor('all'); };
   const filtersActive = filterMethod !== 'all' || filterPsp !== 'all' || filterProcessor !== 'all';
 
-  // ── Import: each row becomes a client + a linked closed_won lead (so it shows here) ──
+  // Close the Import menu when clicking outside it
+  useEffect(() => {
+    if (!showImportMenu) return;
+    const onDown = (e) => { if (importMenuRef.current && !importMenuRef.current.contains(e.target)) setShowImportMenu(false); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showImportMenu]);
+
+  // ── Download a ready-to-fill .xlsx template (headers + examples + instructions) ──
+  async function downloadTemplate() {
+    setShowImportMenu(false);
+    const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+    const ws = XLSX.utils.json_to_sheet(TEMPLATE_EXAMPLE_ROWS, { header: TEMPLATE_HEADERS });
+    ws['!cols'] = TEMPLATE_HEADERS.map(h => ({ wch: Math.max(16, h.length + 2) }));
+    const wsInstr = XLSX.utils.json_to_sheet(TEMPLATE_INSTRUCTIONS);
+    wsInstr['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 60 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Converted Clients');
+    XLSX.utils.book_append_sheet(wb, wsInstr, 'Instructions');
+    XLSX.writeFile(wb, 'veridox-converted-clients-template.xlsx');
+  }
+
+  // ── Import: each row → client + auto-generated TradeScope account + linked closed_won lead ──
   async function handleImport(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -291,56 +374,65 @@ export default function ConvertedClients() {
         return null;
       };
 
-      let ok = 0, fail = 0;
+      let ok = 0, fail = 0, noCreds = 0;
       for (const r of rows) {
-        const firstName = pick(r, 'First Name', 'first_name');
-        const lastName  = pick(r, 'Last Name', 'last_name');
-        const email     = pick(r, 'Email', 'email');
-        if (!firstName && !lastName && !email) continue;
-
-        const phone   = pick(r, 'Phone', 'phone');
-        const company = pick(r, 'Company', 'company_name', 'company');
-        const country = pick(r, 'Country', 'country');
-        const kyc     = (pick(r, 'KYC Status', 'status') || 'approved').toString().toLowerCase().replace(/\s+/g, '_');
+        const firstName = pick(r, 'Name', 'First Name', 'first_name');
+        const lastName  = pick(r, 'Surname', 'Last Name', 'last_name');
+        const phone     = pick(r, 'Phone', 'Phone Number', 'phone');
+        const country   = pick(r, 'Country', 'country');
+        const amount    = parseFloat(pick(r, 'Amount', 'Value', 'estimated_value')) || 0;
+        if (!firstName && !lastName && !phone) continue;
 
         // 1. Create the client
         const { data: cli, error: cErr } = await supabase.from('clients').insert({
           first_name: firstName || null,
           last_name:  lastName || null,
-          email:      email || null,
           phone:      phone || null,
-          company_name: company || null,
           country:    country || null,
-          status:     kyc,
+          status:     'pending',
         }).select().single();
 
         if (cErr || !cli) { fail++; continue; }
 
-        // 2. Create a converted (closed_won) lead pointing at the client
+        // 2. Auto-generate TradeScope credentials + funded trader account
+        const fullName = `${firstName || ''} ${lastName || ''}`.trim() || 'Client';
+        const email    = generateTradescopeEmail(firstName, lastName);
+        const password = generatePassword();
+        let tsEmail = null, tsPassword = null, traderId = null;
+        try {
+          traderId   = await createTradescopeAccount(email, password, fullName, amount);
+          tsEmail    = email;
+          tsPassword = password;
+        } catch {
+          noCreds++; // account provisioning failed — still import the client, without creds
+        }
+
+        // 3. Create a converted (closed_won) lead pointing at the client
         const { error: lErr } = await supabase.from('sales_leads').insert({
           first_name: firstName || null,
           last_name:  lastName || null,
-          email:      email || null,
           phone:      phone || null,
-          company:    company || null,
           country:    country || null,
-          source:     (pick(r, 'Source', 'source') || 'manual'),
+          source:     'manual',
           status:     'active',
           stage:      'closed_won',
-          assigned_to: pick(r, 'Assigned To', 'assigned_to'),
-          estimated_value: parseFloat(pick(r, 'Value', 'Estimated Value', 'estimated_value')) || 0,
+          estimated_value: amount,
           currency:   'USD',
           converted_client_id: cli.id,
-          tradescope_email:     pick(r, 'TradeScope Email', 'tradescope_email'),
-          tradescope_password:  pick(r, 'TradeScope Password', 'tradescope_password'),
-          tradescope_trader_id: pick(r, 'TradeScope Trader ID', 'tradescope_trader_id'),
+          tradescope_email:     tsEmail,
+          tradescope_password:  tsPassword,
+          tradescope_trader_id: traderId,
           updated_at: new Date().toISOString(),
         });
 
         if (lErr) fail++; else ok++;
       }
 
-      alert(`Imported ${ok} converted client${ok === 1 ? '' : 's'}.` + (fail ? ` ${fail} row${fail === 1 ? '' : 's'} failed.` : ''));
+      alert(
+        `Imported ${ok} converted client${ok === 1 ? '' : 's'} with auto-generated TradeScope logins.` +
+        (noCreds ? ` ${noCreds} account${noCreds === 1 ? '' : 's'} could not be provisioned (imported without a login).` : '') +
+        (fail ? ` ${fail} row${fail === 1 ? '' : 's'} failed.` : '')
+      );
       fetchConverted();
     } catch (err) {
       alert(`Import failed: ${err.message}`);
@@ -406,16 +498,49 @@ export default function ConvertedClients() {
           <p style={{ color: '#9CA3AF', fontSize: '13px', margin: '5px 0 0', fontWeight: '400' }}>Leads successfully converted to clients</p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={() => fileRef.current.click()}
-            disabled={importing}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 18px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '5px', fontSize: '13px', fontWeight: '500', color: '#374151', cursor: importing ? 'not-allowed' : 'pointer' }}
-            onMouseEnter={e => { if (!importing) e.currentTarget.style.borderColor = '#9CA3AF'; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = '#E5E7EB'; }}
-          >
-            <Upload size={13} /> {importing ? 'Importing…' : 'Import'}
-          </button>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} />
+          <div style={{ position: 'relative' }} ref={importMenuRef}>
+            <button
+              onClick={() => { if (!importing) setShowImportMenu(v => !v); }}
+              disabled={importing}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 18px', background: '#fff', border: `1px solid ${showImportMenu ? '#9CA3AF' : '#E5E7EB'}`, borderRadius: '5px', fontSize: '13px', fontWeight: '500', color: '#374151', cursor: importing ? 'not-allowed' : 'pointer' }}
+              onMouseEnter={e => { if (!importing) e.currentTarget.style.borderColor = '#9CA3AF'; }}
+              onMouseLeave={e => { if (!showImportMenu) e.currentTarget.style.borderColor = '#E5E7EB'; }}
+            >
+              <Upload size={13} /> {importing ? 'Importing…' : 'Import'}
+              {!importing && <ChevronDown size={13} style={{ transition: 'transform 0.15s', transform: showImportMenu ? 'rotate(180deg)' : 'none', color: '#9CA3AF' }} />}
+            </button>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} />
+
+            {showImportMenu && (
+              <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: '288px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '6px', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 200, overflow: 'hidden' }}>
+                <button
+                  onClick={() => { setShowImportMenu(false); fileRef.current.click(); }}
+                  style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%', padding: '12px 14px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'Inter, sans-serif' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <Upload size={15} style={{ color: '#111827', marginTop: '1px', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>Continue &amp; import file</div>
+                    <div style={{ fontSize: '11px', color: '#9CA3AF', marginTop: '2px' }}>Upload an .xlsx or .csv to import clients</div>
+                  </div>
+                </button>
+                <div style={{ borderTop: '1px solid #F3F4F6' }} />
+                <button
+                  onClick={downloadTemplate}
+                  style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%', padding: '12px 14px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'Inter, sans-serif' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <FileText size={15} style={{ color: '#111827', marginTop: '1px', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>Download template</div>
+                    <div style={{ fontSize: '11px', color: '#9CA3AF', marginTop: '2px' }}>Excel with the exact columns, examples &amp; instructions</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => setShowExportModal(true)}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 18px', background: '#111827', border: '1px solid #111827', borderRadius: '5px', fontSize: '13px', fontWeight: '600', color: '#fff', cursor: 'pointer', letterSpacing: '0.1px' }}
