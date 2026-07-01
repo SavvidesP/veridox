@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { tradescope } from '../lib/tradescope';
 import { Copy, Check, Eye, EyeOff, Upload, Download, X, Search, CheckSquare, Square, FileText, ChevronDown } from 'lucide-react';
 
 // ── TradeScope account provisioning via secure Edge Function (no service key in the client) ──
@@ -77,6 +78,12 @@ function formatAmount(v) {
   return `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 0 })}`;
 }
 
+// Trading-account money: 0 is a real value → show $0.00, only null/undefined → —
+function taMoney(v) {
+  if (v == null) return '—';
+  return `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 const sectionLabel = (text) => (
   <div style={{ fontSize: '11px', fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>{text}</div>
 );
@@ -100,6 +107,15 @@ const ALL_EXPORT_COLUMNS = [
   { key: 'payment_methods',      label: 'Payment Methods' },
   { key: 'psps',                 label: 'PSPs' },
   { key: 'payment_processors',   label: 'Payment Processors' },
+  // Trading account fields (merged from Trading Accounts)
+  { key: 'ta_balance',       label: 'Balance' },
+  { key: 'ta_equity',        label: 'Equity' },
+  { key: 'ta_margin',        label: 'Margin' },
+  { key: 'ta_free_margin',   label: 'Free Margin' },
+  { key: 'ta_leverage',      label: 'Leverage' },
+  { key: 'ta_open_trades',   label: 'Open Trades' },
+  { key: 'ta_closed_trades', label: 'Closed Trades' },
+  { key: 'ta_total_pnl',     label: 'Total P&L' },
 ];
 
 // ── Import template: simple 5-column format. TradeScope credentials are
@@ -187,6 +203,7 @@ export default function ConvertedClients() {
   const navigate = useNavigate();
   const [clients, setClients] = useState([]);
   const [txByClient, setTxByClient] = useState({});
+  const [tradeByTrader, setTradeByTrader] = useState({}); // trader_id → live trading-account stats
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterMethod, setFilterMethod] = useState('all');
@@ -272,9 +289,36 @@ export default function ConvertedClients() {
       };
     }).sort((a, b) => new Date(b.converted_at) - new Date(a.converted_at));
 
+    // Merge live trading-account data (from TradeScope) per client's trader_id
+    const traderIds = enriched.map(c => c.tradescope_trader_id).filter(Boolean);
+    const statMap = {};
+    if (traderIds.length) {
+      const [{ data: accs }, { data: trs }] = await Promise.all([
+        tradescope.from('trader_accounts').select('*').in('id', traderIds),
+        tradescope.from('trades').select('trader_id, status, profit').in('trader_id', traderIds),
+      ]);
+      const tradesByTrader = {};
+      (trs || []).forEach(t => { (tradesByTrader[t.trader_id] ||= []).push(t); });
+      (accs || []).forEach(a => {
+        const ts = tradesByTrader[a.id] || [];
+        const closed = ts.filter(t => t.status === 'closed');
+        statMap[a.id] = {
+          balance: a.balance, equity: a.equity, margin: a.margin, free_margin: a.free_margin,
+          leverage: a.leverage, currency: a.currency,
+          open: ts.filter(t => t.status === 'open').length,
+          closed: closed.length,
+          pnl: closed.reduce((s, t) => s + (t.profit || 0), 0),
+        };
+      });
+    }
+    setTradeByTrader(statMap);
+
     setClients(enriched);
     setLoading(false);
   }
+
+  // Live trading-account stats for a converted client (or null if no TradeScope account)
+  const tradeFor = (c) => tradeByTrader[c.tradescope_trader_id] || null;
 
   // Distinct values (from the converted clients' transactions) that populate the filter dropdowns
   const allTx = Object.values(txByClient).flat();
@@ -445,12 +489,21 @@ export default function ConvertedClients() {
 
       const rows = matched.map(c => {
         const row = {};
+        const ta = tradeFor(c);
         activeCols.forEach(col => {
           if (col.key === 'payment_methods')      row[col.label] = distinctFor(c.id, 'payment_method').join(', ');
           else if (col.key === 'psps')            row[col.label] = distinctFor(c.id, 'psp_actual').join(', ');
           else if (col.key === 'payment_processors') row[col.label] = distinctFor(c.id, 'payment_processor').join(', ');
           else if (col.key === 'converted_at')    row[col.label] = formatDate(c.converted_at);
           else if (col.key === 'estimated_value') row[col.label] = parseFloat(c.estimated_value) || 0;
+          else if (col.key === 'ta_balance')       row[col.label] = ta ? ta.balance : '';
+          else if (col.key === 'ta_equity')        row[col.label] = ta ? ta.equity : '';
+          else if (col.key === 'ta_margin')        row[col.label] = ta ? ta.margin : '';
+          else if (col.key === 'ta_free_margin')   row[col.label] = ta ? ta.free_margin : '';
+          else if (col.key === 'ta_leverage')      row[col.label] = ta ? `1:${ta.leverage || 100}` : '';
+          else if (col.key === 'ta_open_trades')   row[col.label] = ta ? ta.open : '';
+          else if (col.key === 'ta_closed_trades') row[col.label] = ta ? ta.closed : '';
+          else if (col.key === 'ta_total_pnl')     row[col.label] = ta ? ta.pnl : '';
           else row[col.label] = c[col.key] || '';
         });
         return row;
@@ -611,16 +664,16 @@ export default function ConvertedClients() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1120px' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-              {['Client', 'Company', 'Email', 'Country', 'Source', 'Value', 'KYC', 'Payment Methods', 'TradeScope Credentials', 'Assigned To', 'Converted'].map(h => (
+              {['Client', 'Company', 'Email', 'Country', 'Source', 'Value', 'KYC', 'Balance', 'Equity', 'Margin', 'Free Margin', 'Leverage', 'Open', 'Closed', 'P&L', 'Payment Methods', 'TradeScope Credentials', 'Assigned To', 'Converted'].map(h => (
                 <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#9CA3AF', letterSpacing: '0.6px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={11} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>Loading…</td></tr>
+              <tr><td colSpan={19} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>Loading…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={11} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>
+              <tr><td colSpan={19} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>
                 {search || filtersActive ? 'No results found.' : 'No converted clients yet. Convert a lead from Sales CRM to get started.'}
               </td></tr>
             ) : filtered.map((c, idx) => (
@@ -648,6 +701,22 @@ export default function ConvertedClients() {
                 <td style={{ padding: '14px 16px' }}>{sourceBadge(c.lead_source)}</td>
                 <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: '600', color: '#111827' }}>{formatAmount(c.estimated_value)}</td>
                 <td style={{ padding: '14px 16px' }}>{kycBadge(c.status)}</td>
+                {(() => {
+                  const ta = tradeFor(c);
+                  const pnl = ta?.pnl;
+                  return (
+                    <>
+                      <td style={{ padding: '14px 16px', color: '#111827', fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{taMoney(ta?.balance)}</td>
+                      <td style={{ padding: '14px 16px', color: '#111827', fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{taMoney(ta?.equity)}</td>
+                      <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{taMoney(ta?.margin)}</td>
+                      <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{taMoney(ta?.free_margin)}</td>
+                      <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '13px' }}>{ta ? `1:${ta.leverage || 100}` : '—'}</td>
+                      <td style={{ padding: '14px 16px' }}>{ta ? <span style={{ background: 'transparent', color: '#2563EB', border: '1px solid #BFDBFE', padding: '2px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>{ta.open}</span> : '—'}</td>
+                      <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '13px' }}>{ta ? ta.closed : '—'}</td>
+                      <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', color: pnl == null ? '#9CA3AF' : pnl >= 0 ? '#16A34A' : '#DC2626' }}>{pnl == null ? '—' : `${pnl >= 0 ? '+' : ''}${taMoney(pnl)}`}</td>
+                    </>
+                  );
+                })()}
                 <td style={{ padding: '14px 16px', minWidth: '160px' }}><MethodPills values={distinctFor(c.id, 'payment_method')} /></td>
                 <td style={{ padding: '14px 16px', minWidth: '200px' }}>
                   <CredentialsCell email={c.tradescope_email} password={c.tradescope_password} />
