@@ -283,7 +283,7 @@ export default function Layout({ children }) {
             <div style={{ width: '30px', height: '30px', background: '#111827', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '11px', fontWeight: '700', flexShrink: 0 }}>{initials}</div>
             <div style={{ flex: 1, overflow: 'hidden' }}>
               <div style={{ color: '#111827', fontSize: '12px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile?.full_name || user?.email?.split('@')[0] || 'User'}</div>
-              <div style={{ color: '#9CA3AF', fontSize: '11px', textTransform: 'capitalize' }}>{profile?.role || 'analyst'}</div>
+              <div style={{ color: '#9CA3AF', fontSize: '11px' }}>{roleLabel(profile?.role)}</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <NotificationBell />
