@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { cachedQuery } from '../lib/cache';
 import { useAuth } from '../contexts/AuthContext';
+import ConversionAgentDashboard from './ConversionAgentDashboard';
 
 const kycBadge = (status) => {
   const styles = {
@@ -64,7 +65,17 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
+// Role-aware dashboard: each role gets its own view.
 export default function Dashboard() {
+  const { profile } = useAuth();
+  const role = profile?.role;
+  if (role === 'conversion_agent') return <ConversionAgentDashboard />;
+  // retention_agent / conversion_manager / retention_manager → own dashboards (next phases).
+  // admin / manager (and any legacy role) → the full overview below.
+  return <AdminDashboard />;
+}
+
+function AdminDashboard() {
   const navigate = useNavigate();
   const { profile, user } = useAuth();
   const [clients, setClients] = useState([]);
