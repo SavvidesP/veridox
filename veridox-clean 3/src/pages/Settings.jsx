@@ -24,6 +24,15 @@ function genPassword() {
 
 const roleStyle = ROLE_STYLE;
 
+// Team is shown grouped into these sections, in this order.
+const ROLE_SECTIONS = [
+  { value: 'admin',              label: 'Admins' },
+  { value: 'retention_manager',  label: 'Retention Managers' },
+  { value: 'conversion_manager', label: 'Conversion Managers' },
+  { value: 'conversion_agent',   label: 'Conversion Agents' },
+  { value: 'retention_agent',    label: 'Retention Agents' },
+];
+
 function CopyRow({ label, value }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -140,6 +149,34 @@ export default function Settings() {
 
   const initials = (m) => (m.full_name || m.email || '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
+  const renderMember = (member) => (
+    <div key={member.id} onClick={() => navigate(`/team/${member.id}`)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '12px 14px', borderRadius: '8px', border: '1px solid #F3F4F6', background: '#F9FAFB', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = '#F3F4F6'} onMouseLeave={e => e.currentTarget.style.background = '#F9FAFB'}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+        <div style={{ width: '34px', height: '34px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: '700', flexShrink: 0 }}>{initials(member)}</div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: '#111827', fontSize: '13px', fontWeight: '600' }}>{member.full_name || '—'}{member.id === user?.id && <span style={{ color: '#9CA3AF', fontWeight: '400' }}> (you)</span>}</div>
+          <div style={{ color: '#9CA3AF', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{member.email}{member.username ? ` · @${member.username}` : ''}</div>
+        </div>
+      </div>
+      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+        <div style={{ position: 'relative' }}>
+          <select value={member.role || 'conversion_agent'} onChange={e => changeRole(member, e.target.value)}
+            style={{ ...(roleStyle[member.role] || roleStyle.agent), appearance: 'none', WebkitAppearance: 'none', border: 'none', borderRadius: '20px', padding: '4px 26px 4px 12px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+            {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <ChevronDown size={12} color="#6B7280" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+        </div>
+        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: member.active === false ? '#9CA3AF' : '#22C55E' }} title={member.active === false ? 'inactive' : 'active'} />
+        <button onClick={e => resetPassword(e, member)} disabled={resetingId === member.id || member.id === user?.id} title={member.id === user?.id ? "You can't reset your own password here" : 'Reset password'} style={{ background: 'none', border: 'none', cursor: (resetingId === member.id || member.id === user?.id) ? 'not-allowed' : 'pointer', color: '#9CA3AF', padding: '2px', display: 'flex', opacity: member.id === user?.id ? 0.35 : 1 }}>
+          <KeyRound size={14} />
+        </button>
+        <button onClick={() => removeMember(member)} disabled={member.id === user?.id} style={{ background: 'none', border: 'none', cursor: member.id === user?.id ? 'not-allowed' : 'pointer', color: '#D1D5DB', padding: '2px', opacity: member.id === user?.id ? 0.4 : 1 }}>
+          <Trash2 size={14} />
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ padding: '40px 44px', fontFamily: "'Inter', sans-serif", background: '#fff', minHeight: '100vh' }}>
       <div style={{ marginBottom: '32px' }}>
@@ -162,39 +199,41 @@ export default function Settings() {
             </button>
           </div>
 
-          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ padding: '12px 16px' }}>
             {loading ? (
               <div style={{ color: '#D1D5DB', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Loading…</div>
             ) : members.length === 0 ? (
               <div style={{ color: '#9CA3AF', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No team members yet. Invite your first one.</div>
-            ) : members.map(member => (
-              <div key={member.id} onClick={() => navigate(`/team/${member.id}`)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '12px 14px', borderRadius: '8px', border: '1px solid #F3F4F6', background: '#F9FAFB', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = '#F3F4F6'} onMouseLeave={e => e.currentTarget.style.background = '#F9FAFB'}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                  <div style={{ width: '34px', height: '34px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: '700', flexShrink: 0 }}>{initials(member)}</div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ color: '#111827', fontSize: '13px', fontWeight: '600' }}>{member.full_name || '—'}{member.id === user?.id && <span style={{ color: '#9CA3AF', fontWeight: '400' }}> (you)</span>}</div>
-                    <div style={{ color: '#9CA3AF', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{member.email}{member.username ? ` · @${member.username}` : ''}</div>
-                  </div>
-                </div>
-                <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-                  {/* Role toggle */}
-                  <div style={{ position: 'relative' }}>
-                    <select value={member.role || 'conversion_agent'} onChange={e => changeRole(member, e.target.value)}
-                      style={{ ...(roleStyle[member.role] || roleStyle.agent), appearance: 'none', WebkitAppearance: 'none', border: 'none', borderRadius: '20px', padding: '4px 26px 4px 12px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
-                      {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    <ChevronDown size={12} color="#6B7280" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-                  </div>
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: member.active === false ? '#9CA3AF' : '#22C55E' }} title={member.active === false ? 'inactive' : 'active'} />
-                  <button onClick={e => resetPassword(e, member)} disabled={resetingId === member.id || member.id === user?.id} title={member.id === user?.id ? "You can't reset your own password here" : 'Reset password'} style={{ background: 'none', border: 'none', cursor: (resetingId === member.id || member.id === user?.id) ? 'not-allowed' : 'pointer', color: '#9CA3AF', padding: '2px', display: 'flex', opacity: member.id === user?.id ? 0.35 : 1 }}>
-                    <KeyRound size={14} />
-                  </button>
-                  <button onClick={() => removeMember(member)} disabled={member.id === user?.id} style={{ background: 'none', border: 'none', cursor: member.id === user?.id ? 'not-allowed' : 'pointer', color: '#D1D5DB', padding: '2px', opacity: member.id === user?.id ? 0.4 : 1 }}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
+            ) : (
+              <>
+                {ROLE_SECTIONS.map(({ value, label }) => {
+                  const group = members.filter(m => (m.role || 'conversion_agent') === value);
+                  return (
+                    <div key={value} style={{ marginBottom: '18px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.6px', margin: '2px 2px 10px' }}>
+                        {label} <span style={{ color: '#C4C7CE', fontWeight: '600' }}>· {group.length}</span>
+                      </div>
+                      {group.length === 0 ? (
+                        <div style={{ color: '#C4C7CE', fontSize: '12px', padding: '2px 4px 4px' }}>No {label.toLowerCase()} yet.</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>{group.map(renderMember)}</div>
+                      )}
+                    </div>
+                  );
+                })}
+                {(() => {
+                  const known = new Set(ROLE_SECTIONS.map(s => s.value));
+                  const others = members.filter(m => m.role && !known.has(m.role));
+                  if (!others.length) return null;
+                  return (
+                    <div style={{ marginBottom: '18px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.6px', margin: '2px 2px 10px' }}>Other <span style={{ color: '#C4C7CE', fontWeight: '600' }}>· {others.length}</span></div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>{others.map(renderMember)}</div>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
           </div>
         </div>
 
