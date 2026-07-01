@@ -56,7 +56,7 @@ const navGroups = [
 const allNavItems = navGroups.flatMap(g => g.items);
 
 // Panels restricted to admins — agents never see these in nav and can't open them by URL (see AdminRoute in App.jsx).
-const ADMIN_ONLY = new Set(['/clients', '/routing', '/cascading', '/disputes', '/fraud-rules', '/bonus-management', '/ib-affiliate', '/financial-reports', '/integrations', '/add-client', '/settings']);
+const ADMIN_ONLY = new Set(['/clients', '/routing', '/cascading', '/disputes', '/fraud-rules', '/ib-affiliate', '/financial-reports', '/integrations', '/add-client', '/settings']);
 
 const mobileNavItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Home' },
