@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Plus, X, Edit2, Trash2, Clock, Upload, Download, ChevronUp, ChevronDown, Zap, PenLine, Copy, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { DISPOSITIONS, dispMap, toLocalInput } from '../lib/leadStatus';
 
 function generatePassword() {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
@@ -95,28 +96,6 @@ function formatDate(v) {
 }
 
 const stages = ['prospecting', 'qualified', 'proposal', 'negotiation', 'closed_won', 'closed_lost'];
-
-// ── Lead call-disposition (separate axis from sales stage) ──
-// New defaults on assignment and is GREEN; Callback lets the agent set a date/time.
-const DISPOSITIONS = [
-  { value: 'new',            label: 'New',            color: '#15803D', border: '#BBF7D0', bg: '#F0FDF4' },
-  { value: 'no_answer',      label: 'No Answer',      color: '#6B7280', border: '#E5E7EB', bg: '#F9FAFB' },
-  { value: 'not_interested', label: 'Not Interested', color: '#DC2626', border: '#FECACA', bg: '#FEF2F2' },
-  { value: 'invalid',        label: 'Invalid',        color: '#9CA3AF', border: '#E5E7EB', bg: '#F9FAFB' },
-  { value: 'reshuffle',      label: 'Reshuffle',      color: '#7C3AED', border: '#DDD6FE', bg: '#F5F3FF' },
-  { value: 'declined',       label: 'Declined',       color: '#B91C1C', border: '#FECACA', bg: '#FEF2F2' },
-  { value: 'converted',      label: 'Converted',      color: '#16A34A', border: '#BBF7D0', bg: '#F0FDF4' },
-  { value: 'callback',       label: 'Callback',       color: '#D97706', border: '#FDE68A', bg: '#FFFBEB' },
-];
-const dispMap = Object.fromEntries(DISPOSITIONS.map(d => [d.value, d]));
-
-// ISO ⇄ <input type="datetime-local"> value
-const toLocalInput = (iso) => {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
 
 const SORT_FIELDS = [
   { key: 'first_name',       label: 'Name' },
