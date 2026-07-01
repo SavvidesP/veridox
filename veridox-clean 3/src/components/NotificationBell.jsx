@@ -23,11 +23,12 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const panelRef = useRef();
+  const didGenerate = useRef(false); // run generation once per mount (avoids StrictMode double-insert)
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchNotifications();
-    generateNotifications();
+    if (!didGenerate.current) { didGenerate.current = true; generateNotifications(); }
     const handler = (e) => { if (panelRef.current && !panelRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -40,13 +41,30 @@ export default function NotificationBell() {
   }
 
   async function generateNotifications() {
-    const [{ data: disputes }, { data: transactions }, { data: clients }] = await Promise.all([
+    const [{ data: disputes }, { data: transactions }, { data: clients }, { data: dueCallbacks }] = await Promise.all([
       supabase.from('disputes').select('*').eq('status', 'open'),
       supabase.from('transactions').select('transaction_approval, amount'),
       supabase.from('clients').select('status').eq('status', 'pending'),
+      // Leads with a Callback whose scheduled time has arrived
+      supabase.from('sales_leads')
+        .select('id, first_name, last_name, callback_at, assigned_to')
+        .eq('disposition', 'callback')
+        .not('callback_at', 'is', null)
+        .lte('callback_at', new Date().toISOString()),
     ]);
 
     const newNotifications = [];
+
+    // Due callbacks → one reminder per lead (deduped by title)
+    for (const lead of (dueCallbacks || [])) {
+      const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'a lead';
+      newNotifications.push({
+        title: `Callback due — ${name}`,
+        message: `Scheduled callback for ${name} is now due${lead.assigned_to ? ` · ${lead.assigned_to}` : ''}. Open Sales CRM to follow up.`,
+        type: 'warning',
+        link: '/sales-crm',
+      });
+    }
 
     const overdue = (disputes || []).filter(d => d.deadline && new Date(d.deadline) < new Date());
     if (overdue.length > 0) {
