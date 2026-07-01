@@ -204,6 +204,7 @@ export default function ConvertedClients() {
   const [clients, setClients] = useState([]);
   const [txByClient, setTxByClient] = useState({});
   const [tradeByTrader, setTradeByTrader] = useState({}); // trader_id → live trading-account stats
+  const [retentionAgents, setRetentionAgents] = useState([]); // assignment targets
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterMethod, setFilterMethod] = useState('all');
@@ -258,13 +259,15 @@ export default function ConvertedClients() {
     if (!leads?.length) { setClients([]); setTxByClient({}); setLoading(false); return; }
 
     const ids = leads.map(l => l.converted_client_id);
-    const [{ data: cliData }, { data: txData }] = await Promise.all([
+    const [{ data: cliData }, { data: txData }, { data: retAgentData }] = await Promise.all([
       supabase.from('clients').select('*').in('id', ids),
       supabase
         .from('transactions')
         .select('client_id, payment_method, psp_actual, payment_processor, created_date, type')
         .in('client_id', ids),
+      supabase.from('profiles').select('id, full_name, role').in('role', ['retention_agent', 'retention_manager']).eq('active', true),
     ]);
+    setRetentionAgents((retAgentData || []).sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '')));
 
     // Group transactions per client for filtering / preview / export
     const txMap = {};
@@ -286,6 +289,8 @@ export default function ConvertedClients() {
         tradescope_email:     lead?.tradescope_email,
         tradescope_password:  lead?.tradescope_password,
         tradescope_trader_id: lead?.tradescope_trader_id,
+        lead_id:              lead?.id,
+        retention_agent_id:   lead?.retention_agent_id,
       };
     }).sort((a, b) => new Date(b.converted_at) - new Date(a.converted_at));
 
@@ -319,6 +324,13 @@ export default function ConvertedClients() {
 
   // Live trading-account stats for a converted client (or null if no TradeScope account)
   const tradeFor = (c) => tradeByTrader[c.tradescope_trader_id] || null;
+
+  // Admin assigns a converted client to a retention agent (stored on the client's lead)
+  async function assignRetentionAgent(leadId, agentId) {
+    if (!leadId) return;
+    await supabase.from('sales_leads').update({ retention_agent_id: agentId || null, updated_at: new Date().toISOString() }).eq('id', leadId);
+    fetchConverted({ silent: true });
+  }
 
   // Distinct values (from the converted clients' transactions) that populate the filter dropdowns
   const allTx = Object.values(txByClient).flat();
@@ -664,16 +676,16 @@ export default function ConvertedClients() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1120px' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-              {['Client', 'Company', 'Email', 'Country', 'Source', 'Value', 'KYC', 'Balance', 'Equity', 'Margin', 'Free Margin', 'Leverage', 'Open', 'Closed', 'P&L', 'Payment Methods', 'TradeScope Credentials', 'Assigned To', 'Converted'].map(h => (
+              {['Client', 'Company', 'Email', 'Country', 'Source', 'Value', 'KYC', 'Balance', 'Equity', 'Margin', 'Free Margin', 'Leverage', 'Open', 'Closed', 'P&L', 'Payment Methods', 'TradeScope Credentials', 'Assigned To', 'Retention Agent', 'Converted'].map(h => (
                 <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#9CA3AF', letterSpacing: '0.6px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={19} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>Loading…</td></tr>
+              <tr><td colSpan={20} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>Loading…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={19} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>
+              <tr><td colSpan={20} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>
                 {search || filtersActive ? 'No results found.' : 'No converted clients yet. Convert a lead from Sales CRM to get started.'}
               </td></tr>
             ) : filtered.map((c, idx) => (
@@ -722,6 +734,16 @@ export default function ConvertedClients() {
                   <CredentialsCell email={c.tradescope_email} password={c.tradescope_password} />
                 </td>
                 <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '12px' }}>{c.assigned_to || '—'}</td>
+                <td style={{ padding: '14px 16px' }} onClick={e => e.stopPropagation()}>
+                  <select value={c.retention_agent_id || ''} onChange={e => assignRetentionAgent(c.lead_id, e.target.value || null)}
+                    style={{ background: c.retention_agent_id ? '#FDF2F8' : '#fff', color: c.retention_agent_id ? '#BE185D' : '#9CA3AF', border: `1px solid ${c.retention_agent_id ? '#FBCFE8' : '#E5E7EB'}`, padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', outline: 'none', fontFamily: 'Inter, sans-serif', maxWidth: '150px' }}>
+                    <option value="">Unassigned</option>
+                    {retentionAgents.map(a => <option key={a.id} value={a.id} style={{ color: '#111827' }}>{a.full_name}</option>)}
+                    {c.retention_agent_id && !retentionAgents.some(a => a.id === c.retention_agent_id) && (
+                      <option value={c.retention_agent_id} style={{ color: '#111827' }}>Assigned</option>
+                    )}
+                  </select>
+                </td>
                 <td style={{ padding: '14px 16px', color: '#9CA3AF', fontSize: '12px', whiteSpace: 'nowrap' }}>{formatDate(c.converted_at)}</td>
               </tr>
             ))}
