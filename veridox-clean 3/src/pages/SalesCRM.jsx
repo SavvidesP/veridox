@@ -97,6 +97,24 @@ function formatDate(v) {
 
 const stages = ['prospecting', 'qualified', 'proposal', 'negotiation', 'closed_won', 'closed_lost'];
 
+const SALES_COL_FILTERS_KEY = 'veridox-sales-colfilters';
+const DISP_LABEL = Object.fromEntries(DISPOSITIONS.map(d => [d.value, d.label]));
+
+// Table columns — sortKey (for header sort, may be null), fkey (per-column filter, null = no filter), get (searchable text).
+const SALES_COLUMNS = [
+  { label: 'Lead',           sortKey: 'first_name',       fkey: 'lead',       get: l => `${l.first_name || ''} ${l.last_name || ''} ${l.email || ''} ${l.phone || ''}` },
+  { label: 'Company',        sortKey: 'company',          fkey: 'company',    get: l => l.company || '' },
+  { label: 'Source',         sortKey: 'source',           fkey: 'source',     get: l => l.source || '' },
+  { label: 'Stage',          sortKey: 'stage',            fkey: 'stage',      get: l => (l.stage || '').replace('_', ' ') },
+  { label: 'Status',         sortKey: 'disposition',      fkey: 'status',     get: l => DISP_LABEL[l.disposition || 'new'] || l.disposition || '' },
+  { label: 'Value',          sortKey: 'estimated_value',  fkey: 'value',      get: l => String(l.estimated_value ?? '') },
+  { label: 'PSP',            sortKey: null,               fkey: 'psp',        get: l => String(l.payment_method_type || l.payment_method || '') },
+  { label: 'TradeScope',     sortKey: null,               fkey: 'tradescope', get: l => l.tradescope_email || '' },
+  { label: 'Next Follow-up', sortKey: 'next_followup_at', fkey: 'followup',   get: l => formatDate(l.next_followup_at) },
+  { label: 'Assigned',       sortKey: 'assigned_to',      fkey: 'assigned',   get: l => l.assigned_to || '' },
+  { label: '',               sortKey: null,               fkey: null,         get: null },
+];
+
 const SORT_FIELDS = [
   { key: 'first_name',       label: 'Name' },
   { key: 'company',          label: 'Company' },
@@ -137,6 +155,9 @@ export default function SalesCRM() {
   const [filterStage, setFilterStage] = useState('all');
   const [filterSource, setFilterSource] = useState('all');
   const [search, setSearch] = useState('');
+  const [colFilters, setColFilters] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(SALES_COL_FILTERS_KEY)) || {}; } catch { return {}; }
+  });
   const [view, setView] = useState('table');
   const [sortKey, setSortKey] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
@@ -155,6 +176,10 @@ export default function SalesCRM() {
   const [form, setForm] = useState(empty);
 
   useEffect(() => { fetchAll(); }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem(SALES_COL_FILTERS_KEY, JSON.stringify(colFilters)); } catch { /* ignore */ }
+  }, [colFilters]);
 
   async function fetchAll() {
     setLoading(true);
@@ -363,7 +388,12 @@ export default function SalesCRM() {
         !l.last_name?.toLowerCase().includes(search.toLowerCase()) &&
         !l.email?.toLowerCase().includes(search.toLowerCase()) &&
         !l.company?.toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
+      const matchCols = SALES_COLUMNS.every(col => {
+        if (!col.fkey) return true;
+        const fv = (colFilters[col.fkey] || '').trim().toLowerCase();
+        return !fv || col.get(l).toLowerCase().includes(fv);
+      });
+      return matchCols;
     })
     .sort((a, b) => {
       let aVal = a[sortKey] ?? '';
@@ -374,6 +404,9 @@ export default function SalesCRM() {
       if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
       return 0;
     });
+
+  const hasColFilters = Object.values(colFilters).some(v => (v || '').trim() !== '');
+  const clearColFilters = () => setColFilters({});
 
   const totalValue     = leads.filter(l => l.stage === 'closed_won').reduce((s, l) => s + (parseFloat(l.estimated_value) || 0), 0);
   const pipelineValue  = leads.filter(l => !['closed_won', 'closed_lost'].includes(l.stage)).reduce((s, l) => s + (parseFloat(l.estimated_value) || 0), 0);
@@ -479,6 +512,11 @@ export default function SalesCRM() {
             <option key={s} value={s}>{s.replace('_', ' ')}</option>
           ))}
         </select>
+        {hasColFilters && (
+          <button onClick={clearColFilters} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 12px', border: '1px solid #E5E7EB', borderRadius: '5px', background: '#fff', fontSize: '12px', fontWeight: '500', color: '#374151', cursor: 'pointer' }}>
+            <X size={13} /> Clear filters
+          </button>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
           <span style={{ fontSize: '11px', fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.7px' }}>Sort</span>
           <select value={sortKey} onChange={e => setSortKey(e.target.value)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>
@@ -496,21 +534,19 @@ export default function SalesCRM() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1100px' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                {[
-                  { label: 'Lead',           key: 'first_name' },
-                  { label: 'Company',        key: 'company' },
-                  { label: 'Source',         key: 'source' },
-                  { label: 'Stage',          key: 'stage' },
-                  { label: 'Status',         key: 'disposition' },
-                  { label: 'Value',          key: 'estimated_value' },
-                  { label: 'PSP',            key: null },
-                  { label: 'TradeScope',     key: null },
-                  { label: 'Next Follow-up', key: 'next_followup_at' },
-                  { label: 'Assigned',       key: 'assigned_to' },
-                  { label: '',               key: null },
-                ].map(({ label, key }, i) => (
-                  <th key={i} onClick={key ? () => handleSort(key) : undefined} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#9CA3AF', letterSpacing: '0.6px', textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: key ? 'pointer' : 'default', userSelect: 'none' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{label}{key && <SortIcon field={key} />}</div>
+                {SALES_COLUMNS.map((col, i) => (
+                  <th key={i} onClick={col.sortKey ? () => handleSort(col.sortKey) : undefined} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#9CA3AF', letterSpacing: '0.6px', textTransform: 'uppercase', whiteSpace: 'nowrap', cursor: col.sortKey ? 'pointer' : 'default', userSelect: 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{col.label}{col.sortKey && <SortIcon field={col.sortKey} />}</div>
+                  </th>
+                ))}
+              </tr>
+              <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
+                {SALES_COLUMNS.map((col, i) => (
+                  <th key={i + '-f'} style={{ padding: '0 16px 8px' }}>
+                    {col.fkey && (
+                      <input value={colFilters[col.fkey] || ''} onChange={e => setColFilters(f => ({ ...f, [col.fkey]: e.target.value }))} placeholder="Filter…"
+                        style={{ width: '100%', minWidth: '80px', boxSizing: 'border-box', padding: '5px 8px', border: '1px solid #E5E7EB', borderRadius: '5px', fontSize: '11px', fontWeight: '400', color: '#111827', background: '#fff', outline: 'none', textTransform: 'none', letterSpacing: 'normal' }} />
+                    )}
                   </th>
                 ))}
               </tr>
