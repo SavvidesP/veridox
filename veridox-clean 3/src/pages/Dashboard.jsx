@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import ConversionAgentDashboard from './ConversionAgentDashboard';
 import ConversionManagerDashboard from './ConversionManagerDashboard';
 import RetentionAgentDashboard from './RetentionAgentDashboard';
+import RetentionManagerDashboard from './RetentionManagerDashboard';
 
 const kycBadge = (status) => {
   const styles = {
@@ -74,7 +75,7 @@ export default function Dashboard() {
   if (role === 'conversion_agent') return <ConversionAgentDashboard />;
   if (role === 'conversion_manager') return <ConversionManagerDashboard />;
   if (role === 'retention_agent') return <RetentionAgentDashboard />;
-  // retention_manager → own dashboard (next phase).
+  if (role === 'retention_manager') return <RetentionManagerDashboard />;
   // admin / manager (and any legacy role) → the full overview below.
   return <AdminDashboard />;
 }
