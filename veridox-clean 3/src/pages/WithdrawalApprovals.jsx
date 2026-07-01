@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, X, CheckCircle, XCircle, Clock, AlertTriangle, DollarSign, Eye } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -29,6 +30,7 @@ function formatDate(v) {
 }
 
 export default function WithdrawalApprovals() {
+  const navigate = useNavigate();
   const [withdrawals, setWithdrawals] = useState([]);
   const [clients, setClients] = useState([]);
   const [tradingAccounts, setTradingAccounts] = useState([]);
@@ -50,7 +52,7 @@ export default function WithdrawalApprovals() {
   async function fetchAll() {
     setLoading(true);
     const [{ data: wd }, { data: cli }, { data: acc }] = await Promise.all([
-      supabase.from('withdrawal_approvals').select('*, client:client_id(first_name, last_name, email), trading_account:trading_account_id(account_number, platform)').order('created_at', { ascending: false }),
+      supabase.from('withdrawal_approvals').select('*, client:client_id(first_name, last_name, email), trading_account:trading_account_id(account_number, platform), source_tx:source_transaction_id(id, transaction_id)').order('created_at', { ascending: false }),
       supabase.from('clients').select('id, first_name, last_name, email').order('first_name'),
       supabase.from('trading_accounts').select('id, account_number, platform, client_id').order('account_number'),
     ]);
@@ -146,23 +148,29 @@ export default function WithdrawalApprovals() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
           <thead>
             <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
-              {['Client', 'Account', 'Amount', 'Method', 'Requested', 'Status', 'Actions'].map(h => (
+              {['Client', 'Transaction', 'Account', 'Amount', 'Method', 'Requested', 'Status', 'Actions'].map(h => (
                 <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#94A3B8', letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>Loading...</td></tr>
+              <tr><td colSpan={8} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>Loading...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>No withdrawal requests. Click <strong>New Request</strong> to add one.</td></tr>
+              <tr><td colSpan={8} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>No withdrawal requests. Click <strong>New Request</strong> to add one.</td></tr>
             ) : filtered.map(w => (
-              <tr key={w.id} style={{ borderTop: '1px solid #F1F5F9' }}
+              <tr key={w.id} onClick={() => w.source_transaction_id && navigate(`/transactions/${w.source_transaction_id}`)}
+                style={{ borderTop: '1px solid #F1F5F9', cursor: w.source_transaction_id ? 'pointer' : 'default' }}
                 onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'}
                 onMouseLeave={e => e.currentTarget.style.background = 'white'}>
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{w.client ? `${w.client.first_name} ${w.client.last_name}` : '—'}</div>
                   <div style={{ fontSize: '11px', color: '#94A3B8' }}>{w.client?.email}</div>
+                </td>
+                <td style={{ padding: '12px 16px' }}>
+                  {w.source_tx ? (
+                    <span style={{ fontSize: '12px', fontWeight: '600', fontFamily: 'monospace', color: '#4338CA' }}>{w.source_tx.transaction_id || 'View'}</span>
+                  ) : <span style={{ fontSize: '12px', color: '#94A3B8' }}>—</span>}
                 </td>
                 <td style={{ padding: '12px 16px' }}>
                   {w.trading_account ? (
@@ -181,7 +189,7 @@ export default function WithdrawalApprovals() {
                   </span>
                 </td>
                 <td style={{ padding: '12px 16px' }}>
-                  <button onClick={() => { setSelected(w); setShowDetailModal(true); }}
+                  <button onClick={(e) => { e.stopPropagation(); setSelected(w); setShowDetailModal(true); }}
                     style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', background: '#EEF2FF', border: '1px solid #C7D2FE', borderRadius: '7px', fontSize: '12px', fontWeight: '600', color: '#4338CA', cursor: 'pointer' }}>
                     <Eye size={13} /> Review
                   </button>
