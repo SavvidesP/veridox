@@ -223,7 +223,7 @@ function AdminDashboard() {
       {sectionLabel('Clients')}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '32px' }}>
         <StatCard label="Total" value={loading ? '—' : totalClients} onClick={() => navigate('/clients')} />
-        <StatCard label="Pending KYC" value={loading ? '—' : pendingKYC} sub={pendingKYC > 0 ? 'Needs review' : 'All clear'} onClick={() => navigate('/pipeline')} />
+        <StatCard label="Pending KYC" value={loading ? '—' : pendingKYC} sub={pendingKYC > 0 ? 'Needs review' : 'All clear'} onClick={() => navigate('/clients')} />
         <StatCard label="Approved" value={loading ? '—' : approvedClients} onClick={() => navigate('/clients')} />
         <StatCard label="Rejected" value={loading ? '—' : rejectedClients} alert={rejectedClients > 0} onClick={() => navigate('/clients')} />
       </div>
@@ -236,7 +236,7 @@ function AdminDashboard() {
         <StatCard label="Transactions" value={loading ? '—' : totalTx.toLocaleString()} onClick={() => navigate('/transactions')} />
         <StatCard label="Volume" value={loading ? '—' : formatVolume(totalVolume)} onClick={() => navigate('/analytics')} />
         <StatCard label="Approval Rate" value={loading ? '—' : `${approvalRate}%`} sub={parseFloat(approvalRate) < 50 && totalTx > 0 ? 'Below threshold' : 'Healthy'} alert={parseFloat(approvalRate) < 50 && totalTx > 0} onClick={() => navigate('/analytics')} />
-        <StatCard label="Open Disputes" value={loading ? '—' : openDisputes} sub={overdueDisputes > 0 ? `${overdueDisputes} overdue` : 'No overdue'} alert={overdueDisputes > 0} onClick={() => navigate('/disputes')} />
+        <StatCard label="Open Disputes" value={loading ? '—' : openDisputes} sub={overdueDisputes > 0 ? `${overdueDisputes} overdue` : 'No overdue'} alert={overdueDisputes > 0} />
       </div>
 
       {divider}
