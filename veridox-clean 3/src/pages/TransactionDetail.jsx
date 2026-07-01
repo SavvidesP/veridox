@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Copy, CheckCircle, XCircle, Clock, CreditCard, User, Building, ArrowLeftRight, Shield, Download } from 'lucide-react';
+import { ArrowLeft, Copy, CheckCircle, XCircle, Clock, CreditCard, User, Building, ArrowLeftRight, Shield, Download, Wallet } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const statusStyle = (s) => {
@@ -212,10 +212,16 @@ export default function TransactionDetail() {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
             <div style={{ fontSize: '32px', fontWeight: '800', color: '#0F172A', letterSpacing: '-1px' }}>{formatAmount(tx.amount, tx.account_currency)}</div>
             {tx.usd_amount && <div style={{ fontSize: '13px', color: '#94A3B8' }}>≈ {formatAmount(tx.usd_amount, 'USD')}</div>}
-            <button onClick={() => exportLog(tx, cascadeLog)}
-              style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
-              <Download size={14} /> Export Log (.txt)
-            </button>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button onClick={() => navigate('/withdrawal-approvals')}
+                style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: 'white', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
+                <Wallet size={14} /> Withdrawal
+              </button>
+              <button onClick={() => exportLog(tx, cascadeLog)}
+                style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
+                <Download size={14} /> Export Log (.txt)
+              </button>
+            </div>
           </div>
         </div>
       </div>
