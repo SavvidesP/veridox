@@ -155,6 +155,8 @@ export default function TransactionDetail() {
   const [tx, setTx] = useState(null);
   const [loading, setLoading] = useState(true);
   const [relatedTx, setRelatedTx] = useState([]);
+  const [alreadyInitiated, setAlreadyInitiated] = useState(false);
+  const [initiating, setInitiating] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -165,15 +167,39 @@ export default function TransactionDetail() {
         const { data: related } = await supabase.from('transactions').select('*').eq('account_no', data.account_no).neq('id', id).order('created_date', { ascending: false }).limit(5);
         setRelatedTx(related || []);
       }
+      // Has a withdrawal already been initiated from this transaction?
+      const { data: wd } = await supabase.from('withdrawal_approvals').select('id').eq('source_transaction_id', id).limit(1);
+      setAlreadyInitiated((wd || []).length > 0);
       setLoading(false);
     }
     fetchData();
   }, [id]);
 
+  async function initiateWithdrawal() {
+    if (!tx || alreadyInitiated || initiating) return;
+    setInitiating(true);
+    const payload = {
+      client_id: tx.client_id || null,
+      source_transaction_id: tx.id,
+      amount: parseFloat(tx.amount) || 0,
+      currency: tx.account_currency || 'USD',
+      payment_method: tx.payment_method || 'bank_transfer',
+      status: 'pending',
+      requested_at: new Date().toISOString(),
+      notes: `Initiated from transaction ${tx.transaction_id || tx.id}`,
+    };
+    const { error } = await supabase.from('withdrawal_approvals').insert(payload);
+    setInitiating(false);
+    if (error) { alert('Could not initiate withdrawal: ' + error.message); return; }
+    setAlreadyInitiated(true);
+    navigate('/withdrawal-approvals');
+  }
+
   if (loading) return <div style={{ padding: '32px', color: '#64748B', fontSize: '13px', fontFamily: 'Inter, sans-serif' }}>Loading...</div>;
   if (!tx) return <div style={{ padding: '32px', color: '#64748B', fontSize: '13px', fontFamily: 'Inter, sans-serif' }}>Transaction not found.</div>;
 
   const sStyle = statusStyle(tx.transaction_approval);
+  const isSuccess = tx.transaction_approval?.toLowerCase() === 'success';
   const StatusIcon = tx.transaction_approval?.toLowerCase() === 'success' ? CheckCircle : tx.transaction_approval?.toLowerCase() === 'failed' ? XCircle : Clock;
 
   const cascadeLog = [
@@ -213,10 +239,17 @@ export default function TransactionDetail() {
             <div style={{ fontSize: '32px', fontWeight: '800', color: '#0F172A', letterSpacing: '-1px' }}>{formatAmount(tx.amount, tx.account_currency)}</div>
             {tx.usd_amount && <div style={{ fontSize: '13px', color: '#94A3B8' }}>≈ {formatAmount(tx.usd_amount, 'USD')}</div>}
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <button onClick={() => navigate('/withdrawal-approvals')}
-                style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: 'white', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
-                <Wallet size={14} /> Withdrawal
-              </button>
+              {isSuccess && (alreadyInitiated ? (
+                <button disabled
+                  style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#94A3B8', cursor: 'not-allowed', fontFamily: 'Inter, sans-serif' }}>
+                  <CheckCircle size={14} /> Withdrawal already initiated
+                </button>
+              ) : (
+                <button onClick={initiateWithdrawal} disabled={initiating}
+                  style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: 'white', cursor: initiating ? 'wait' : 'pointer', opacity: initiating ? 0.7 : 1, fontFamily: 'Inter, sans-serif' }}>
+                  <Wallet size={14} /> {initiating ? 'Initiating…' : 'Withdrawal'}
+                </button>
+              ))}
               <button onClick={() => exportLog(tx, cascadeLog)}
                 style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#475569', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
                 <Download size={14} /> Export Log (.txt)
