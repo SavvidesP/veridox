@@ -129,12 +129,11 @@ export default function Transactions() {
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [page, setPage] = useState(0);
-  const [total, setTotal] = useState(0);
   const [showExportModal, setShowExportModal] = useState(false);
   const [selectedCols, setSelectedCols] = useState(ALL_EXPORT_COLUMNS.map(c => c.key));
   const [exportFilters, setExportFilters] = useState({ dateFrom: '', dateTo: '', brand: 'all', status: 'all', type: 'all', firstName: '', lastName: '' });
   const [exporting, setExporting] = useState(false);
-  // Per-column filters (client-side, refine the loaded page) — persist across refresh until cleared.
+  // Per-column filters (client-side, across the whole dataset) — persist across refresh until cleared.
   const [colFilters, setColFilters] = useState(() => {
     try { return JSON.parse(localStorage.getItem(TX_COL_FILTERS_KEY)) || {}; } catch { return {}; }
   });
@@ -143,23 +142,29 @@ export default function Transactions() {
 
   const brands = [...new Set(transactions.map(t => t.brand_name).filter(Boolean))].sort();
 
-  useEffect(() => { fetchTransactions(); }, [page, filterBrand, filterType, filterStatus]);
+  // Load ALL transactions once (batched to bypass the 1000-row cap) so every filter
+  // — search, brand/type/status and per-column — applies across the entire dataset, then
+  // paginate client-side.
+  useEffect(() => { fetchAll(); }, []);
 
   useEffect(() => {
     try { localStorage.setItem(TX_COL_FILTERS_KEY, JSON.stringify(colFilters)); } catch { /* ignore */ }
   }, [colFilters]);
 
-  async function fetchTransactions() {
+  // Any filter change returns to the first page.
+  useEffect(() => { setPage(0); }, [search, filterBrand, filterType, filterStatus, colFilters]);
+
+  async function fetchAll() {
     setLoading(true);
-    let q = supabase.from('transactions').select('*', { count: 'exact' });
-    if (filterBrand !== 'all') q = q.eq('brand_name', filterBrand);
-    if (filterType !== 'all') q = q.eq('type', filterType);
-    if (filterStatus !== 'all') q = q.ilike('transaction_approval', filterStatus);
-    if (search) q = q.or(`transaction_id.ilike.%${search}%,first_name.ilike.%${search}%,last_name.ilike.%${search}%,account_no.ilike.%${search}%`);
-    q = q.order('created_date', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-    const { data, count } = await q;
-    setTransactions(data || []);
-    setTotal(count || 0);
+    const all = [];
+    const BATCH = 1000;
+    for (let from = 0; ; from += BATCH) {
+      const { data, error } = await supabase.from('transactions').select('*').order('created_date', { ascending: false }).range(from, from + BATCH - 1);
+      if (error || !data || data.length === 0) break;
+      all.push(...data);
+      if (data.length < BATCH) break;
+    }
+    setTransactions(all);
     setLoading(false);
   }
 
@@ -205,7 +210,7 @@ export default function Transactions() {
     }
     setImporting(false);
     setPage(0);
-    fetchTransactions();
+    fetchAll();
   }
 
   async function exportExcel() {
@@ -306,13 +311,21 @@ export default function Transactions() {
     XLSX.writeFile(wb, `${brand}-statement-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
-  const totalPages = Math.ceil(total / PAGE_SIZE);
-
-  // Apply per-column filters to the loaded page.
-  const displayed = transactions.filter(t => COLUMNS.every(col => {
-    const fv = (colFilters[col.key] || '').trim().toLowerCase();
-    return !fv || cellText(col.key, t).toLowerCase().includes(fv);
-  }));
+  // Filter the ENTIRE dataset (search + brand/type/status + per-column), then paginate client-side.
+  const searchLc = search.trim().toLowerCase();
+  const filteredAll = transactions.filter(t => {
+    if (filterBrand !== 'all' && t.brand_name !== filterBrand) return false;
+    if (filterType !== 'all' && (t.type || '') !== filterType) return false;
+    if (filterStatus !== 'all' && (t.transaction_approval || '').toLowerCase() !== filterStatus.toLowerCase()) return false;
+    if (searchLc && ![t.transaction_id, t.first_name, t.last_name, t.account_no].some(v => String(v || '').toLowerCase().includes(searchLc))) return false;
+    return COLUMNS.every(col => {
+      const fv = (colFilters[col.key] || '').trim().toLowerCase();
+      return !fv || cellText(col.key, t).toLowerCase().includes(fv);
+    });
+  });
+  const total = transactions.length;
+  const totalPages = Math.ceil(filteredAll.length / PAGE_SIZE);
+  const displayed = filteredAll.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const hasColFilters = Object.values(colFilters).some(v => (v || '').trim() !== '');
   const clearColFilters = () => setColFilters({});
 
@@ -365,8 +378,7 @@ export default function Transactions() {
           <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#9CA3AF' }} />
           <input
             value={search}
-            onChange={e => { setSearch(e.target.value); setPage(0); }}
-            onKeyDown={e => e.key === 'Enter' && fetchTransactions()}
+            onChange={e => setSearch(e.target.value)}
             placeholder="Search ID, name, account…"
             style={{ ...inputStyle, paddingLeft: '32px', width: '220px' }}
           />
@@ -462,7 +474,7 @@ export default function Transactions() {
                         Import your first file
                       </span>
                     </>
-                  ) : 'No transactions match your column filters on this page.'}
+                  ) : 'No transactions match your filters.'}
                 </td>
               </tr>
             ) : displayed.map((t, idx) => (
@@ -497,7 +509,7 @@ export default function Transactions() {
       {totalPages > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '16px' }}>
           <span style={{ color: '#9CA3AF', fontSize: '13px' }}>
-            Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total.toLocaleString()}
+            Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filteredAll.length)} of {filteredAll.length.toLocaleString()}
           </span>
           <div style={{ display: 'flex', gap: '6px' }}>
             <button
