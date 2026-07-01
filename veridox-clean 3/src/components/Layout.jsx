@@ -1,6 +1,7 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Users, Kanban, UserPlus, Settings, LogOut, ArrowLeftRight, Zap, ShieldAlert, ShieldX, BarChart2, GitBranch, Menu, X, Plug, LineChart, Gift, Network, FileText, ArrowDownCircle, FolderOpen, MessageCircle, Briefcase, ChevronDown, ChevronRight, CreditCard, Building2, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { roleLabel, isAdmin as isAdminRole } from '../lib/roles';
 import NotificationBell from './NotificationBell';
 import { useState, useEffect } from 'react';
 
@@ -143,7 +144,7 @@ export default function Layout({ children }) {
   const [openGroups, setOpenGroups] = useState(['Payments']);
 
   // Role-based nav: agents never see admin-only panels. Empty groups are dropped.
-  const isAdmin = profile?.role === 'admin';
+  const isAdmin = isAdminRole(profile?.role);
   const canSee = (to) => isAdmin || !ADMIN_ONLY.has(to);
   const visibleGroups = navGroups
     .map(g => ({ ...g, items: g.items.filter(i => canSee(i.to)) }))
@@ -225,7 +226,7 @@ export default function Layout({ children }) {
                 <div style={{ width: '36px', height: '36px', background: '#111827', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '13px', fontWeight: '700' }}>{initials}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ color: '#111827', fontSize: '13px', fontWeight: '600' }}>{profile?.full_name || user?.email?.split('@')[0]}</div>
-                  <div style={{ color: '#9CA3AF', fontSize: '11px', textTransform: 'capitalize' }}>{profile?.role || 'analyst'}</div>
+                  <div style={{ color: '#9CA3AF', fontSize: '11px' }}>{roleLabel(profile?.role)}</div>
                 </div>
                 <button onClick={handleSignOut} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}>
                   <LogOut size={16} />
