@@ -374,7 +374,7 @@ export default function ClientProfile() {
               </thead>
               <tbody>
                 {transactions.map(t => (
-                  <tr key={t.id} style={{ borderTop: '1px solid #F3F4F6' }} onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'} onMouseLeave={e => e.currentTarget.style.background = 'white'}>
+                  <tr key={t.id} onClick={() => navigate(`/transactions/${t.id}`)} style={{ borderTop: '1px solid #F3F4F6', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'} onMouseLeave={e => e.currentTarget.style.background = 'white'}>
                     <td style={{ padding: '11px 16px', color: '#6B7280', fontSize: '12px' }}>{formatDate(t.created_date)}</td>
                     <td style={{ padding: '11px 16px', color: '#111827', fontSize: '12px', fontWeight: '600', fontFamily: 'monospace' }}>{t.transaction_id || '-'}</td>
                     <td style={{ padding: '11px 16px', color: '#374151', fontSize: '12px' }}>{t.brand_name || '-'}</td>
