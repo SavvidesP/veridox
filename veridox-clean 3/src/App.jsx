@@ -93,7 +93,7 @@ function App() {
         <Route path="/integrations" element={<AdminRoute><Layout><Integrations /></Layout></AdminRoute>} />
         <Route path="/trading-accounts" element={<ProtectedRoute><Layout><TradingAccounts /></Layout></ProtectedRoute>} />
         <Route path="/trading-accounts/:id" element={<ProtectedRoute><Layout><TradingAccountDetail /></Layout></ProtectedRoute>} />
-        <Route path="/bonus-management" element={<AdminRoute><Layout><BonusManagement /></Layout></AdminRoute>} />
+        <Route path="/bonus-management" element={<ProtectedRoute><Layout><BonusManagement /></Layout></ProtectedRoute>} />
         <Route path="/ib-affiliate" element={<AdminRoute><Layout><IBAffiliate /></Layout></AdminRoute>} />
         <Route path="/financial-reports" element={<AdminRoute><Layout><FinancialReports /></Layout></AdminRoute>} />
         <Route path="/withdrawal-approvals" element={<ProtectedRoute><Layout><WithdrawalApprovals /></Layout></ProtectedRoute>} />
