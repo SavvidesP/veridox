@@ -108,6 +108,10 @@ export default function TradingAccountDetail() {
   const [tradeChecking, setTradeChecking] = useState(false);
   const [floatPnL, setFloatPnL] = useState(0); // open-positions' floating P&L = equity − balance (captured when a modal opens)
   const [linkBase, setLinkBase] = useState({ balance: 0, profit: 0 }); // captured at trade-modal open for the bidirectional Balance ↔ trade-profit link
+  // Editable Margin Level (draft strings) + validation flags for both modals.
+  const [adjMl, setAdjMl] = useState(''); const [adjMlErr, setAdjMlErr] = useState(false);
+  const [tradeMl, setTradeMl] = useState(''); const [tradeMlErr, setTradeMlErr] = useState(false);
+  const mlDraft = (equity, margin) => { const ml = calcMarginLevel(equity, margin); return ml == null ? '' : String(ml); };
 
   async function loadAdjustments() {
     const { data, error } = await supabase
@@ -158,19 +162,27 @@ export default function TradingAccountDetail() {
     ADJUSTABLE.forEach(({ key }) => { f[key] = account?.[key] ?? 0; });
     setForm(f);
     setFloatPnL(round2(toNum(account?.equity) - toNum(account?.balance)));
+    setAdjMl(mlDraft(f.equity, f.margin)); setAdjMlErr(false);
     setShowAdjust(true);
   }
 
   // Adjust-account modal: editing Balance (or Margin) auto-recomputes Equity, Free Margin & Margin Level.
   function setAdjustField(key, value) {
-    setForm(prev => {
-      const next = { ...prev, [key]: value };
-      if (key === 'balance') next.equity = deriveEquity(value, floatPnL);
-      if (key === 'balance' || key === 'margin' || key === 'equity') {
-        next.free_margin = deriveFreeMargin(next.equity, next.margin);
-      }
-      return next;
-    });
+    const next = { ...form, [key]: value };
+    if (key === 'balance') next.equity = deriveEquity(value, floatPnL);
+    if (key === 'balance' || key === 'margin' || key === 'equity') next.free_margin = deriveFreeMargin(next.equity, next.margin);
+    setForm(next);
+    setAdjMl(mlDraft(next.equity, next.margin)); setAdjMlErr(false); // keep Margin Level in sync
+  }
+  // Override Margin Level → back-calculate Used Margin = Equity / (ML/100), keeping Equity fixed.
+  function setAdjustMarginLevel(value) {
+    setAdjMl(value);
+    const ml = toNum(value);
+    if (value === '' || ml <= 0) { setAdjMlErr(true); return; }
+    setAdjMlErr(false);
+    const eq = toNum(form.equity);
+    const newMargin = round2(eq / (ml / 100));
+    setForm(prev => ({ ...prev, margin: newMargin, free_margin: deriveFreeMargin(eq, newMargin) }));
   }
 
   async function saveAdjust() {
@@ -217,6 +229,7 @@ export default function TradingAccountDetail() {
     setTradeForm(f);
     setFloatPnL(round2(toNum(account?.equity) - toNum(account?.balance)));
     setLinkBase({ balance: toNum(account?.balance), profit: toNum(tr.profit) });
+    setTradeMl(mlDraft(f.acct_equity, f.acct_margin)); setTradeMlErr(false);
     setEditTrade(tr);
     // Can we revert? Only if this trade already has recorded adjustments (original captured).
     // Reset + flag while checking so Revert stays disabled until we actually know (no stale
@@ -230,18 +243,15 @@ export default function TradingAccountDetail() {
 
   // Per-trade modal account section: editing Balance (or Margin) auto-recomputes Equity, Free Margin & Margin Level.
   function setTradeAcctField(key, value) {
-    setTradeForm(prev => {
-      const next = { ...prev, ['acct_' + key]: value };
-      if (key === 'balance') {
-        next.acct_equity = deriveEquity(value, floatPnL);
-        // Bidirectional link: balance change flows into this trade's profit by the same delta.
-        next.profit = round2(linkBase.profit + (toNum(value) - linkBase.balance));
-      }
-      if (key === 'balance' || key === 'margin' || key === 'equity') {
-        next.acct_free_margin = deriveFreeMargin(next.acct_equity, next.acct_margin);
-      }
-      return next;
-    });
+    const next = { ...tradeForm, ['acct_' + key]: value };
+    if (key === 'balance') {
+      next.acct_equity = deriveEquity(value, floatPnL);
+      // Bidirectional link: balance change flows into this trade's profit by the same delta.
+      next.profit = round2(linkBase.profit + (toNum(value) - linkBase.balance));
+    }
+    if (key === 'balance' || key === 'margin' || key === 'equity') next.acct_free_margin = deriveFreeMargin(next.acct_equity, next.acct_margin);
+    setTradeForm(next);
+    setTradeMl(mlDraft(next.acct_equity, next.acct_margin)); setTradeMlErr(false);
   }
   // CLOSED AT drives the close: a NOW/PAST time closes immediately (status→closed on save);
   // a FUTURE time schedules the close (trade stays open, a backend cron closes it at that moment).
@@ -258,11 +268,21 @@ export default function TradingAccountDetail() {
   })();
   // Bidirectional link (other direction): editing this trade's profit flows into the account balance/equity.
   function setTradeProfit(value) {
-    setTradeForm(prev => {
-      const newBalance = round2(linkBase.balance + (toNum(value) - linkBase.profit));
-      const equity = deriveEquity(newBalance, floatPnL);
-      return { ...prev, profit: value, acct_balance: newBalance, acct_equity: equity, acct_free_margin: deriveFreeMargin(equity, prev.acct_margin) };
-    });
+    const newBalance = round2(linkBase.balance + (toNum(value) - linkBase.profit));
+    const equity = deriveEquity(newBalance, floatPnL);
+    const next = { ...tradeForm, profit: value, acct_balance: newBalance, acct_equity: equity, acct_free_margin: deriveFreeMargin(equity, tradeForm.acct_margin) };
+    setTradeForm(next);
+    setTradeMl(mlDraft(next.acct_equity, next.acct_margin)); setTradeMlErr(false);
+  }
+  // Override Margin Level (per-trade account) → back-calculate Used Margin = Equity / (ML/100), Equity fixed.
+  function setTradeMarginLevel(value) {
+    setTradeMl(value);
+    const ml = toNum(value);
+    if (value === '' || ml <= 0) { setTradeMlErr(true); return; }
+    setTradeMlErr(false);
+    const eq = toNum(tradeForm.acct_equity);
+    const newMargin = round2(eq / (ml / 100));
+    setTradeForm(prev => ({ ...prev, acct_margin: newMargin, acct_free_margin: deriveFreeMargin(eq, newMargin) }));
   }
 
   async function saveTradeEdit() {
@@ -513,14 +533,18 @@ export default function TradingAccountDetail() {
                     </div>
                   </div>
                 ))}
-                {(() => { const ml = calcMarginLevel(form.equity, form.margin); const c = ml == null ? '#6B7280' : ml < 50 ? '#DC2626' : ml < 100 ? '#D97706' : '#16A34A'; return (
+                {(() => { const ml = toNum(adjMl); const c = adjMlErr ? '#DC2626' : ml < 50 ? '#DC2626' : ml < 100 ? '#D97706' : '#16A34A'; return (
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>Margin Level · auto</label>
-                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #E5E7EB', borderRadius: '8px', background: '#F9FAFB', padding: '10px 12px' }}>
-                      <span style={{ fontSize: '14px', fontWeight: '700', color: c }}>{fmtMarginLevel(ml)}</span>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>Margin Level</label>
+                    <div style={{ display: 'flex', alignItems: 'center', border: `1px solid ${adjMlErr ? '#DC2626' : '#E5E7EB'}`, borderRadius: '8px', overflow: 'hidden' }}>
+                      <input type="number" step="any" value={adjMl} onChange={e => setAdjustMarginLevel(e.target.value)} style={{ flex: 1, padding: '10px 12px', border: 'none', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: c, width: '100%', fontWeight: '700' }} />
+                      <span style={{ padding: '0 12px 0 0', color: '#9CA3AF', fontSize: '13px' }}>%</span>
                     </div>
                   </div>
                 ); })()}
+              </div>
+              <div style={{ fontSize: '11px', color: adjMlErr ? '#DC2626' : '#9CA3AF', marginTop: '10px', lineHeight: 1.5 }}>
+                {adjMlErr ? 'Margin Level must be greater than 0.' : 'Adjusting Margin Level recalculates Used Margin based on current Equity.'}
               </div>
               <div style={{ display: 'flex', gap: '10px', marginTop: '22px' }}>
                 <button onClick={() => setShowAdjust(false)} disabled={saving} style={{ flex: 1, padding: '11px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Cancel</button>
@@ -574,14 +598,18 @@ export default function TradingAccountDetail() {
                     </div>
                   </div>
                 ))}
-                {(() => { const ml = calcMarginLevel(tradeForm.acct_equity, tradeForm.acct_margin); const c = ml == null ? '#6B7280' : ml < 50 ? '#DC2626' : ml < 100 ? '#D97706' : '#16A34A'; return (
+                {(() => { const ml = toNum(tradeMl); const c = tradeMlErr ? '#DC2626' : ml < 50 ? '#DC2626' : ml < 100 ? '#D97706' : '#16A34A'; return (
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>Margin Level · auto</label>
-                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #E5E7EB', borderRadius: '8px', background: '#F9FAFB', padding: '10px 12px' }}>
-                      <span style={{ fontSize: '14px', fontWeight: '700', color: c }}>{fmtMarginLevel(ml)}</span>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>Margin Level</label>
+                    <div style={{ display: 'flex', alignItems: 'center', border: `1px solid ${tradeMlErr ? '#DC2626' : '#E5E7EB'}`, borderRadius: '8px', overflow: 'hidden', background: scheduledCloseIso ? '#F9FAFB' : '#fff' }}>
+                      <input type="number" step="any" value={tradeMl} readOnly={!!scheduledCloseIso} onChange={scheduledCloseIso ? undefined : (e => setTradeMarginLevel(e.target.value))} style={{ flex: 1, padding: '10px 12px', border: 'none', outline: 'none', fontSize: '14px', fontFamily: "'Inter', sans-serif", color: c, width: '100%', fontWeight: '700', background: 'transparent', cursor: scheduledCloseIso ? 'not-allowed' : 'text' }} />
+                      <span style={{ padding: '0 12px 0 0', color: '#9CA3AF', fontSize: '13px' }}>%</span>
                     </div>
                   </div>
                 ); })()}
+              </div>
+              <div style={{ fontSize: '11px', color: tradeMlErr ? '#DC2626' : '#9CA3AF', marginTop: '10px', lineHeight: 1.5 }}>
+                {tradeMlErr ? 'Margin Level must be greater than 0.' : 'Adjusting Margin Level recalculates Used Margin based on current Equity.'}
               </div>
               <div style={{ display: 'flex', gap: '10px', marginTop: '22px' }}>
                 <button onClick={() => setEditTrade(null)} disabled={tradeSaving} style={{ flex: '0 0 auto', padding: '11px 16px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '8px', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Cancel</button>
