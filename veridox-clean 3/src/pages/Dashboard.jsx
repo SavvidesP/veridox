@@ -86,6 +86,7 @@ function AdminDashboard() {
   const [clients, setClients] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [disputes, setDisputes] = useState([]);
+  const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [txByMonth, setTxByMonth] = useState([]);
 
@@ -93,14 +94,16 @@ function AdminDashboard() {
 
   async function fetchAll() {
     setLoading(true);
-    const [c, t, d] = await Promise.all([
+    const [c, t, d, l] = await Promise.all([
       cachedQuery('clients', () => supabase.from('clients').select('*').order('created_at', { ascending: false }).then(r => r.data || [])),
       cachedQuery('transactions', () => supabase.from('transactions').select('*').order('created_at', { ascending: false }).then(r => r.data || [])),
       cachedQuery('disputes', () => supabase.from('disputes').select('*').order('created_at', { ascending: false }).then(r => r.data || [])),
+      cachedQuery('leads_overview', () => supabase.from('sales_leads').select('id, converted_client_id, disposition').then(r => r.data || [])),
     ]);
     setClients(c);
     setTransactions(t);
     setDisputes(d);
+    setLeads(l);
 
     const monthMap = {};
     ;(t || []).forEach(tx => {
@@ -129,6 +132,15 @@ function AdminDashboard() {
     if (!d.deadline || d.status === 'won' || d.status === 'lost') return false;
     return new Date(d.deadline) < new Date();
   }).length;
+
+  // ── Department overview (Conversion + Retention) ──
+  const convertedClientIds = new Set(leads.filter(l => l.converted_client_id).map(l => l.converted_client_id));
+  const totalLeads     = leads.length;
+  const convertedLeads = convertedClientIds.size;
+  const conversionRate = totalLeads > 0 ? ((convertedLeads / totalLeads) * 100).toFixed(1) : '0.0';
+  const deposits       = transactions.filter(t => t.type?.toLowerCase() === 'deposit' && (!t.transaction_approval || t.transaction_approval.toLowerCase() === 'success'));
+  const retentionVolume = deposits.filter(t => convertedClientIds.has(t.client_id)).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+  const totalFTDs      = new Set(deposits.filter(t => convertedClientIds.has(t.client_id)).map(t => t.client_id)).size;
 
   const alerts = [
     openDisputes > 0    && { type: 'warning', message: `${openDisputes} open dispute${openDisputes > 1 ? 's' : ''} need attention`, link: '/disputes' },
@@ -195,6 +207,17 @@ function AdminDashboard() {
           ))}
         </div>
       )}
+
+      {/* ── Departments (Conversion + Retention) ── */}
+      {sectionLabel('Departments')}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '32px' }}>
+        <StatCard label="Retention Volume" value={loading ? '—' : formatVolume(retentionVolume)} sub="Deposits from converted clients" />
+        <StatCard label="Conversion FTDs" value={loading ? '—' : totalFTDs} sub="Clients with a first deposit" />
+        <StatCard label="Conversion Rate" value={loading ? '—' : `${conversionRate}%`} sub={`${convertedLeads}/${totalLeads} leads`} />
+        <StatCard label="Approval Rate" value={loading ? '—' : `${approvalRate}%`} sub={parseFloat(approvalRate) < 50 && totalTx > 0 ? 'Below threshold' : 'Healthy'} alert={parseFloat(approvalRate) < 50 && totalTx > 0} onClick={() => navigate('/analytics')} />
+      </div>
+
+      {divider}
 
       {/* ── Clients ── */}
       {sectionLabel('Clients')}
