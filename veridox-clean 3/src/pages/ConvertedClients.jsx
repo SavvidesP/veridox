@@ -3,10 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Copy, Check, Eye, EyeOff, Upload, Download, X, Search, CheckSquare, Square, FileText, ChevronDown } from 'lucide-react';
 
-// ── TradeScope account provisioning (same as SalesCRM convert flow) ──
-const TRADESCOPE_URL = 'https://atqucerzdqzchdgylmfo.supabase.co';
-const TRADESCOPE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF0cXVjZXJ6ZHF6Y2hkZ3lsbWZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MjM5MzMyNiwiZXhwIjoyMDk3OTY5MzI2fQ.JAdc5f9FRkMcamUcwDbp1phY16WYiJSpGrmZgCHkpUc';
-
+// ── TradeScope account provisioning via secure Edge Function (no service key in the client) ──
 function generatePassword() {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
   let pass = '';
@@ -21,26 +18,20 @@ function generateTradescopeEmail(first, last) {
   return `${base}.${rand}@tradescope.net`;
 }
 
-// Creates the TradeScope auth user + trader account, funded with `amount`. Returns the trader id.
+// Provisions the TradeScope auth user + funded trader account (funded with `amount`) via the
+// `create-tradescope-account` Edge Function. Returns the trader id.
 async function createTradescopeAccount(email, password, name, amount) {
-  const balance = amount > 0 ? amount : 10000;
-  const authRes = await fetch(`${TRADESCOPE_URL}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'apikey': TRADESCOPE_SERVICE_KEY, 'Authorization': `Bearer ${TRADESCOPE_SERVICE_KEY}` },
-    body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { full_name: name } }),
+  const { data, error } = await supabase.functions.invoke('create-tradescope-account', {
+    body: { email, password, name, amount: amount ?? null },
   });
-  const authData = await authRes.json();
-  if (!authRes.ok || !authData.id) throw new Error(authData.message || 'Failed to create auth user');
-
-  const dbRes = await fetch(`${TRADESCOPE_URL}/rest/v1/trader_accounts`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'apikey': TRADESCOPE_SERVICE_KEY, 'Authorization': `Bearer ${TRADESCOPE_SERVICE_KEY}`, 'Prefer': 'return=representation' },
-    body: JSON.stringify({ id: authData.id, email, balance, equity: balance, margin: 0, free_margin: balance, currency: 'USD', leverage: 100 }),
-  });
-  const dbData = await dbRes.json();
-  if (!dbRes.ok) throw new Error(dbData.message || 'Failed to create trader account');
-
-  return authData.id;
+  if (error || data?.error) {
+    let msg = data?.error || error?.message || 'Failed to create TradeScope account';
+    if (error?.context && typeof error.context.json === 'function') {
+      try { const b = await error.context.json(); if (b?.error) msg = b.error; } catch (_) { /* ignore */ }
+    }
+    throw new Error(msg);
+  }
+  return data.id;
 }
 
 const sourceBadge = (s) => {
