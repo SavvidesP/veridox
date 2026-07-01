@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Clock, Mail, Phone, Globe, Building, MapPin, ArrowLeftRight, ShieldAlert, User, CheckCircle, TrendingUp, TrendingDown, Activity as ActivityIcon, Pencil } from 'lucide-react';
+import { ArrowLeft, FileText, Clock, Mail, Phone, Globe, Building, MapPin, ArrowLeftRight, ShieldAlert, User, CheckCircle, TrendingUp, TrendingDown, Activity as ActivityIcon, Pencil, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { tradescope } from '../lib/tradescope';
 import { invalidate } from '../lib/cache';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdmin as isAdminRole } from '../lib/roles';
+import { isAdmin as isAdminRole, roleLabel, roleStyle } from '../lib/roles';
 
 const statusConfig = {
   pending: { label: 'Pending', bg: '#F3F4F6', color: '#374151' },
@@ -63,6 +63,7 @@ export default function ClientProfile() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
   const canEditWarning = isAdminRole(profile?.role);
+  const canManageNotes = isAdminRole(profile?.role);
   const [client, setClient] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [notes, setNotes] = useState([]);
@@ -73,6 +74,10 @@ export default function ClientProfile() {
   const [loading, setLoading] = useState(true);
   const [newNote, setNewNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const [noteAuthors, setNoteAuthors] = useState({});
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editNoteText, setEditNoteText] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
   const [activeTab, setActiveTab] = useState('Overview');
   const [tsAccount, setTsAccount] = useState(null);
   const [tsTrades, setTsTrades] = useState([]);
@@ -92,6 +97,7 @@ export default function ClientProfile() {
       setClient(c.data);
       setDocuments(d.data || []);
       setNotes(n.data || []);
+      loadNoteAuthors(n.data || []);
       setActivities(a.data || []);
       // Fetch transactions by account_no or name
       if (c.data) {
@@ -228,13 +234,46 @@ export default function ClientProfile() {
     setEditingDetails(false);
   };
 
+  // Resolve the author (name + role) for each note's created_by so the admin can
+  // see who wrote each one — including notes agents added from their own panels.
+  async function loadNoteAuthors(noteList) {
+    const ids = [...new Set((noteList || []).map(n => n.created_by).filter(Boolean))];
+    if (!ids.length) { setNoteAuthors({}); return; }
+    const { data } = await supabase.from('profiles').select('id, full_name, role').in('id', ids);
+    const map = {};
+    (data || []).forEach(p => { map[p.id] = { name: p.full_name, role: p.role }; });
+    setNoteAuthors(map);
+  }
+
   const addNote = async () => {
     if (!newNote.trim()) return;
     setSavingNote(true);
     const { data } = await supabase.from('notes').insert({ client_id: id, content: newNote, created_by: user?.id }).select().single();
-    if (data) setNotes(prev => [data, ...prev]);
+    if (data) {
+      setNotes(prev => [data, ...prev]);
+      if (user?.id) setNoteAuthors(prev => ({ ...prev, [user.id]: { name: profile?.full_name, role: profile?.role } }));
+    }
     setNewNote('');
     setSavingNote(false);
+  };
+
+  const startEditNote = (note) => { setEditingNoteId(note.id); setEditNoteText(note.content); };
+  const cancelEditNote = () => { setEditingNoteId(null); setEditNoteText(''); };
+  const saveEditNote = async (noteId) => {
+    const content = editNoteText.trim();
+    if (!content) return;
+    setSavingEdit(true);
+    const { error } = await supabase.from('notes').update({ content }).eq('id', noteId);
+    setSavingEdit(false);
+    if (error) { alert('Could not save note: ' + error.message); return; }
+    setNotes(prev => prev.map(n => (n.id === noteId ? { ...n, content } : n)));
+    cancelEditNote();
+  };
+  const deleteNote = async (noteId) => {
+    if (!window.confirm('Delete this note? This cannot be undone.')) return;
+    const { error } = await supabase.from('notes').delete().eq('id', noteId);
+    if (error) { alert('Could not delete note: ' + error.message); return; }
+    setNotes(prev => prev.filter(n => n.id !== noteId));
   };
 
   if (loading) return <div style={{ padding: '32px', color: '#6B7280', fontSize: '13px', fontFamily: 'Inter, sans-serif' }}>Loading...</div>;
@@ -470,12 +509,46 @@ export default function ClientProfile() {
           </div>
           {notes.length === 0 ? (
             <div style={{ color: '#9CA3AF', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No notes yet.</div>
-          ) : notes.map(note => (
-            <div key={note.id} style={{ padding: '14px', background: '#F9FAFB', borderRadius: '8px', marginBottom: '10px', border: '1px solid #F3F4F6' }}>
-              <div style={{ color: '#111827', fontSize: '13px', lineHeight: '1.5' }}>{note.content}</div>
-              <div style={{ color: '#9CA3AF', fontSize: '11px', marginTop: '6px' }}>{new Date(note.created_at).toLocaleString()}</div>
-            </div>
-          ))}
+          ) : notes.map(note => {
+            const author = noteAuthors[note.created_by];
+            const isEditing = editingNoteId === note.id;
+            return (
+              <div key={note.id} style={{ padding: '14px', background: '#F9FAFB', borderRadius: '8px', marginBottom: '10px', border: '1px solid #F3F4F6' }}>
+                {isEditing ? (
+                  <>
+                    <textarea value={editNoteText} onChange={e => setEditNoteText(e.target.value)} rows={3} autoFocus
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #E5E7EB', borderRadius: '6px', fontSize: '13px', color: '#111827', outline: 'none', resize: 'vertical', fontFamily: 'Inter, sans-serif' }} />
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                      <button onClick={() => saveEditNote(note.id)} disabled={savingEdit || !editNoteText.trim()} style={{ padding: '6px 14px', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: savingEdit ? 'not-allowed' : 'pointer', opacity: savingEdit || !editNoteText.trim() ? 0.7 : 1 }}>{savingEdit ? 'Saving…' : 'Save'}</button>
+                      <button onClick={cancelEditNote} disabled={savingEdit} style={{ padding: '6px 14px', background: 'white', color: '#374151', border: '1px solid #E5E7EB', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+                      <div style={{ color: '#111827', fontSize: '13px', lineHeight: '1.5', flex: 1, whiteSpace: 'pre-wrap' }}>{note.content}</div>
+                      {canManageNotes && (
+                        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                          <button onClick={() => startEditNote(note)} title="Edit note" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '26px', background: 'white', border: '1px solid #E5E7EB', borderRadius: '6px', color: '#6366F1', cursor: 'pointer' }}><Pencil size={13} /></button>
+                          <button onClick={() => deleteNote(note.id)} title="Delete note" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '26px', background: 'white', border: '1px solid #E5E7EB', borderRadius: '6px', color: '#DC2626', cursor: 'pointer' }}><Trash2 size={13} /></button>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+                      {author && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: '600', color: '#374151' }}>{author.name || 'Unknown'}</span>
+                          {author.role && <span style={{ ...roleStyle(author.role), padding: '1px 7px', borderRadius: '10px', fontSize: '10px', fontWeight: '600' }}>{roleLabel(author.role)}</span>}
+                          <span style={{ color: '#D1D5DB' }}>·</span>
+                        </span>
+                      )}
+                      <span style={{ color: '#9CA3AF', fontSize: '11px' }}>{new Date(note.created_at).toLocaleString()}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
