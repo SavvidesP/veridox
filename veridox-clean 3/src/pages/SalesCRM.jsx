@@ -163,6 +163,7 @@ export default function SalesCRM() {
   const [sortDir, setSortDir] = useState('desc');
   const [converting, setConverting] = useState(null); // lead id being converted
   const [credentialsModal, setCredentialsModal] = useState(null); // { email, password, name }
+  const [agents, setAgents] = useState([]); // conversion-department team members (assignment targets)
   const fileRef = useRef();
 
   const empty = {
@@ -178,9 +179,23 @@ export default function SalesCRM() {
 
   async function fetchAll() {
     setLoading(true);
-    const { data: leadData } = await supabase.from('sales_leads').select('*').order('created_at', { ascending: false });
+    const [{ data: leadData }, { data: agentData }] = await Promise.all([
+      supabase.from('sales_leads').select('*').order('created_at', { ascending: false }),
+      supabase.from('profiles').select('id, full_name, role').in('role', ['conversion_agent', 'conversion_manager']).eq('active', true),
+    ]);
     setLeads(leadData || []);
+    setAgents((agentData || []).sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '')));
     setLoading(false);
+  }
+
+  async function assignLead(id, agentId) {
+    const agent = agents.find(a => a.id === agentId);
+    await supabase.from('sales_leads').update({
+      assigned_agent_id: agentId || null,
+      assigned_to: agent?.full_name || null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', id);
+    fetchAll();
   }
 
   async function save() {
@@ -583,7 +598,17 @@ export default function SalesCRM() {
                     </td>
 
                     <td style={{ padding: '14px 16px', fontSize: '12px', color: overdue ? '#DC2626' : '#6B7280', fontWeight: overdue ? '600' : '400' }}>{formatDate(l.next_followup_at)}</td>
-                    <td style={{ padding: '14px 16px', fontSize: '12px', color: '#6B7280' }}>{l.assigned_to || '—'}</td>
+                    <td style={{ padding: '14px 16px' }}>
+                      <select value={l.assigned_agent_id || ''} onChange={e => assignLead(l.id, e.target.value || null)}
+                        style={{ background: l.assigned_agent_id ? '#EEF2FF' : '#fff', color: l.assigned_agent_id ? '#4338CA' : '#9CA3AF', border: `1px solid ${l.assigned_agent_id ? '#C7D2FE' : '#E5E7EB'}`, padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', outline: 'none', fontFamily: 'Inter, sans-serif', maxWidth: '150px' }}>
+                        <option value="">Unassigned</option>
+                        {agents.map(a => <option key={a.id} value={a.id} style={{ color: '#111827' }}>{a.full_name}</option>)}
+                        {/* keep a stale assignee visible even if they're no longer in the agent list */}
+                        {l.assigned_agent_id && !agents.some(a => a.id === l.assigned_agent_id) && (
+                          <option value={l.assigned_agent_id} style={{ color: '#111827' }}>{l.assigned_to || 'Assigned'}</option>
+                        )}
+                      </select>
+                    </td>
                     <td style={{ padding: '14px 16px' }}>
                       <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                         {!l.converted_client_id && l.stage !== 'closed_lost' && (
