@@ -41,7 +41,6 @@ const navGroups = [
     icon: Settings,
     items: [
       { to: '/integrations', icon: Plug, label: 'Integrations' },
-      { to: '/add-client', icon: UserPlus, label: 'Add Client' },
       { to: '/settings', icon: Settings, label: 'Settings' },
     ],
   },
