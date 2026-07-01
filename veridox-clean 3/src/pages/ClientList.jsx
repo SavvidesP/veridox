@@ -4,11 +4,23 @@ import { Search, UserPlus, ChevronRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { cachedQuery } from '../lib/cache';
 
+const KYC_LABELS = { approved: 'Approved', under_review: 'Under Review', pending: 'Pending', rejected: 'Rejected' };
+
 const kycBadge = (status) => {
   const styles = { approved: { background: '#DCFCE7', color: '#166534' }, under_review: { background: '#FEF9C3', color: '#854D0E' }, pending: { background: '#F1F5F9', color: '#475569' }, rejected: { background: '#FEE2E2', color: '#991B1B' } };
-  const labels = { approved: 'Approved', under_review: 'Under Review', pending: 'Pending', rejected: 'Rejected' };
-  return <span style={{ ...styles[status], padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600' }}>{labels[status]}</span>;
+  return <span style={{ ...styles[status], padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600' }}>{KYC_LABELS[status]}</span>;
 };
+
+// Per-column filter definitions (label + how to extract the searchable text from a row).
+const CLIENT_COLUMNS = [
+  { label: 'Client', key: 'client', get: c => `${c.first_name || ''} ${c.last_name || ''} ${c.email || ''}` },
+  { label: 'Company', key: 'company', get: c => c.company_name || '' },
+  { label: 'Country', key: 'country', get: c => c.country || '' },
+  { label: 'Industry', key: 'industry', get: c => c.industry || '' },
+  { label: 'KYC Status', key: 'status', get: c => KYC_LABELS[c.status] || c.status || '' },
+  { label: 'Added', key: 'added', get: c => (c.created_at ? new Date(c.created_at).toLocaleDateString() : '') },
+  { label: '', key: null },
+];
 
 const filters = [
   { key: 'all', label: 'All Clients' },
@@ -22,6 +34,7 @@ export default function ClientList() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
+  const [colFilters, setColFilters] = useState({});
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -36,7 +49,12 @@ export default function ClientList() {
     const name = `${c.first_name} ${c.last_name}`.toLowerCase();
     const matchSearch = name.includes(search.toLowerCase()) || (c.company_name || '').toLowerCase().includes(search.toLowerCase()) || (c.country || '').toLowerCase().includes(search.toLowerCase());
     const matchFilter = activeFilter === 'all' || c.status === activeFilter;
-    return matchSearch && matchFilter;
+    const matchCols = CLIENT_COLUMNS.every(col => {
+      if (!col.key) return true;
+      const fv = (colFilters[col.key] || '').trim().toLowerCase();
+      return !fv || col.get(c).toLowerCase().includes(fv);
+    });
+    return matchSearch && matchFilter && matchCols;
   });
 
   return (
@@ -69,8 +87,18 @@ export default function ClientList() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
-              {['Client', 'Company', 'Country', 'Industry', 'KYC Status', 'Added', ''].map(h => (
-                <th key={h} style={{ padding: '11px 20px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#94A3B8', letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+              {CLIENT_COLUMNS.map((col, i) => (
+                <th key={col.label || `c${i}`} style={{ padding: '11px 20px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: '#94A3B8', letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{col.label}</th>
+              ))}
+            </tr>
+            <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+              {CLIENT_COLUMNS.map((col, i) => (
+                <th key={(col.label || `c${i}`) + '-f'} style={{ padding: '0 20px 8px' }}>
+                  {col.key && (
+                    <input value={colFilters[col.key] || ''} onChange={e => setColFilters(f => ({ ...f, [col.key]: e.target.value }))} placeholder="Filter…"
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '5px 8px', border: '1px solid #E2E8F0', borderRadius: '6px', fontSize: '11px', fontWeight: '400', color: '#0F172A', background: 'white', outline: 'none', textTransform: 'none', letterSpacing: 'normal' }} />
+                  )}
+                </th>
               ))}
             </tr>
           </thead>
