@@ -2,7 +2,11 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { tradescope } from '../lib/tradescope';
+import { useAuth } from '../contexts/AuthContext';
+import { isAdmin as isAdminRole } from '../lib/roles';
 import { Copy, Check, Eye, EyeOff, Upload, Download, X, Search, CheckSquare, Square, FileText, ChevronDown } from 'lucide-react';
+
+const LEVERAGE_OPTIONS = [1, 50, 100, 200, 300, 400, 500, 1000];
 
 // ── TradeScope account provisioning via secure Edge Function (no service key in the client) ──
 function generatePassword() {
@@ -201,6 +205,8 @@ function MethodPills({ values }) {
 
 export default function ConvertedClients() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
+  const canEdit = isAdminRole(profile?.role); // only Admin/Manager can adjust leverage
   const [clients, setClients] = useState([]);
   const [txByClient, setTxByClient] = useState({});
   const [tradeByTrader, setTradeByTrader] = useState({}); // trader_id → live trading-account stats
@@ -324,6 +330,14 @@ export default function ConvertedClients() {
 
   // Live trading-account stats for a converted client (or null if no TradeScope account)
   const tradeFor = (c) => tradeByTrader[c.tradescope_trader_id] || null;
+
+  // Admin adjusts a client's trading-account leverage (writes to TradeScope trader_accounts)
+  async function updateLeverage(traderId, leverage) {
+    if (!traderId) return;
+    const lev = parseInt(leverage, 10);
+    await tradescope.from('trader_accounts').update({ leverage: lev }).eq('id', traderId);
+    setTradeByTrader(prev => ({ ...prev, [traderId]: { ...(prev[traderId] || {}), leverage: lev } }));
+  }
 
   // Admin assigns a converted client to a retention agent (stored on the client's lead)
   async function assignRetentionAgent(leadId, agentId) {
@@ -722,7 +736,14 @@ export default function ConvertedClients() {
                       <td style={{ padding: '14px 16px', color: '#111827', fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{taMoney(ta?.equity)}</td>
                       <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{taMoney(ta?.margin)}</td>
                       <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{taMoney(ta?.free_margin)}</td>
-                      <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '13px' }}>{ta ? `1:${ta.leverage || 100}` : '—'}</td>
+                      <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '13px' }} onClick={e => e.stopPropagation()}>
+                        {!ta ? '—' : canEdit ? (
+                          <select value={ta.leverage || 100} onChange={e => updateLeverage(c.tradescope_trader_id, e.target.value)}
+                            style={{ background: '#fff', color: '#374151', border: '1px solid #E5E7EB', padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', outline: 'none', fontFamily: 'Inter, sans-serif' }}>
+                            {[...new Set([...LEVERAGE_OPTIONS, ta.leverage || 100])].sort((a, b) => a - b).map(l => <option key={l} value={l}>1:{l}</option>)}
+                          </select>
+                        ) : `1:${ta.leverage || 100}`}
+                      </td>
                       <td style={{ padding: '14px 16px' }}>{ta ? <span style={{ background: 'transparent', color: '#2563EB', border: '1px solid #BFDBFE', padding: '2px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>{ta.open}</span> : '—'}</td>
                       <td style={{ padding: '14px 16px', color: '#6B7280', fontSize: '13px' }}>{ta ? ta.closed : '—'}</td>
                       <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', color: pnl == null ? '#9CA3AF' : pnl >= 0 ? '#16A34A' : '#DC2626' }}>{pnl == null ? '—' : `${pnl >= 0 ? '+' : ''}${taMoney(pnl)}`}</td>
