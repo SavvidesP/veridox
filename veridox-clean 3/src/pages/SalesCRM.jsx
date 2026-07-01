@@ -96,6 +96,28 @@ function formatDate(v) {
 
 const stages = ['prospecting', 'qualified', 'proposal', 'negotiation', 'closed_won', 'closed_lost'];
 
+// ── Lead call-disposition (separate axis from sales stage) ──
+// New defaults on assignment and is GREEN; Callback lets the agent set a date/time.
+const DISPOSITIONS = [
+  { value: 'new',            label: 'New',            color: '#15803D', border: '#BBF7D0', bg: '#F0FDF4' },
+  { value: 'no_answer',      label: 'No Answer',      color: '#6B7280', border: '#E5E7EB', bg: '#F9FAFB' },
+  { value: 'not_interested', label: 'Not Interested', color: '#DC2626', border: '#FECACA', bg: '#FEF2F2' },
+  { value: 'invalid',        label: 'Invalid',        color: '#9CA3AF', border: '#E5E7EB', bg: '#F9FAFB' },
+  { value: 'reshuffle',      label: 'Reshuffle',      color: '#7C3AED', border: '#DDD6FE', bg: '#F5F3FF' },
+  { value: 'declined',       label: 'Declined',       color: '#B91C1C', border: '#FECACA', bg: '#FEF2F2' },
+  { value: 'converted',      label: 'Converted',      color: '#16A34A', border: '#BBF7D0', bg: '#F0FDF4' },
+  { value: 'callback',       label: 'Callback',       color: '#D97706', border: '#FDE68A', bg: '#FFFBEB' },
+];
+const dispMap = Object.fromEntries(DISPOSITIONS.map(d => [d.value, d]));
+
+// ISO ⇄ <input type="datetime-local"> value
+const toLocalInput = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 const SORT_FIELDS = [
   { key: 'first_name',       label: 'Name' },
   { key: 'company',          label: 'Company' },
@@ -185,6 +207,18 @@ export default function SalesCRM() {
     fetchAll();
   }
 
+  async function updateDisposition(id, disposition) {
+    const patch = { disposition, updated_at: new Date().toISOString() };
+    if (disposition !== 'callback') patch.callback_at = null; // clear schedule when leaving Callback
+    await supabase.from('sales_leads').update(patch).eq('id', id);
+    fetchAll();
+  }
+
+  async function updateCallbackAt(id, iso) {
+    await supabase.from('sales_leads').update({ callback_at: iso || null, updated_at: new Date().toISOString() }).eq('id', id);
+    fetchAll();
+  }
+
   async function remove(id) {
     if (!window.confirm('Delete this lead?')) return;
     await supabase.from('sales_leads').delete().eq('id', id);
@@ -224,6 +258,7 @@ export default function SalesCRM() {
       // 3. Update lead with converted status + credentials
       await supabase.from('sales_leads').update({
         stage: 'closed_won',
+        disposition: 'converted',
         converted_client_id: clientData.id,
         tradescope_email: lead.email,
         tradescope_password: password,
@@ -472,6 +507,7 @@ export default function SalesCRM() {
                   { label: 'Company',        key: 'company' },
                   { label: 'Source',         key: 'source' },
                   { label: 'Stage',          key: 'stage' },
+                  { label: 'Status',         key: 'disposition' },
                   { label: 'Value',          key: 'estimated_value' },
                   { label: 'PSP',            key: null },
                   { label: 'TradeScope',     key: null },
@@ -508,6 +544,22 @@ export default function SalesCRM() {
                       <select value={l.stage} onChange={e => updateStage(l.id, e.target.value)} style={{ background: 'transparent', color: stageColors[l.stage]?.color || '#6B7280', border: `1px solid ${stageColors[l.stage]?.border || '#E5E7EB'}`, padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', outline: 'none', textTransform: 'capitalize', fontFamily: 'Inter, sans-serif' }}>
                         {stages.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
                       </select>
+                    </td>
+                    {/* Call disposition (New default, green) + Callback scheduler */}
+                    <td style={{ padding: '14px 16px' }}>
+                      {(() => { const d = dispMap[l.disposition] || dispMap.new; return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <select value={l.disposition || 'new'} onChange={e => updateDisposition(l.id, e.target.value)}
+                            style={{ background: d.bg, color: d.color, border: `1px solid ${d.border}`, padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', outline: 'none', fontFamily: 'Inter, sans-serif' }}>
+                            {DISPOSITIONS.map(o => <option key={o.value} value={o.value} style={{ background: '#fff', color: '#111827' }}>{o.label}</option>)}
+                          </select>
+                          {l.disposition === 'callback' && (
+                            <input type="datetime-local" value={toLocalInput(l.callback_at)}
+                              onChange={e => updateCallbackAt(l.id, e.target.value ? new Date(e.target.value).toISOString() : null)}
+                              style={{ fontSize: '11px', color: '#B45309', border: '1px solid #FDE68A', borderRadius: '4px', padding: '2px 6px', outline: 'none', fontFamily: 'Inter, sans-serif', background: '#FFFBEB' }} />
+                          )}
+                        </div>
+                      ); })()}
                     </td>
                     <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: '600', color: '#111827' }}>{formatAmount(l.estimated_value)}</td>
                     <PspCell lead={l} />
