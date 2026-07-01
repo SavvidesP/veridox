@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { tradescope } from '../lib/tradescope';
 import { invalidate } from '../lib/cache';
 import { useAuth } from '../contexts/AuthContext';
+import { isAdmin as isAdminRole } from '../lib/roles';
 
 const statusConfig = {
   pending: { label: 'Pending', bg: '#F3F4F6', color: '#374151' },
@@ -50,7 +51,8 @@ const tabs = ['Overview', 'Transactions', 'Disputes', 'Documents', 'Notes', 'Act
 export default function ClientProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const canEditWarning = isAdminRole(profile?.role);
   const [client, setClient] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [notes, setNotes] = useState([]);
@@ -64,6 +66,7 @@ export default function ClientProfile() {
   const [tsAccount, setTsAccount] = useState(null);
   const [tsTrades, setTsTrades] = useState([]);
   const [tsLoading, setTsLoading] = useState(true);
+  const [warningDraft, setWarningDraft] = useState('');
   const [editingDetails, setEditingDetails] = useState(false);
   const [detailsForm, setDetailsForm] = useState({ email: '', phone: '', country: '' });
   const [savingDetails, setSavingDetails] = useState(false);
@@ -155,6 +158,23 @@ export default function ClientProfile() {
     resolveAndLoad();
     return () => { active = false; if (channel) tradescope.removeChannel(channel); if (poll) clearInterval(poll); };
   }, [client?.id, client?.email]);
+
+  // Sync the warning draft when a different trader account loads (not on every realtime tick)
+  useEffect(() => { setWarningDraft(tsAccount?.admin_warning || ''); }, [tsAccount?.id]);
+
+  // Admin sets / clears the warning shown on the client's TradeScope platform
+  async function saveWarning() {
+    if (!tsAccount) return;
+    const val = warningDraft.trim() || null;
+    await tradescope.from('trader_accounts').update({ admin_warning: val }).eq('id', tsAccount.id);
+    setTsAccount(prev => (prev ? { ...prev, admin_warning: val } : prev));
+  }
+  async function clearWarning() {
+    setWarningDraft('');
+    if (!tsAccount) return;
+    await tradescope.from('trader_accounts').update({ admin_warning: null }).eq('id', tsAccount.id);
+    setTsAccount(prev => (prev ? { ...prev, admin_warning: null } : prev));
+  }
 
   const updateStatus = async (newStatus) => {
     await supabase.from('clients').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id);
@@ -473,6 +493,27 @@ export default function ClientProfile() {
                       <div style={{ fontSize: '15px', fontWeight: '700', color: '#111827', marginTop: '3px' }}>{s.value}</div>
                     </div>
                   ))}
+                </div>
+
+                {/* Last login + admin warning (P7) */}
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{ fontSize: '12px', color: '#6B7280', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Clock size={13} color="#9CA3AF" /> Last login: <strong style={{ color: '#374151' }}>{tsAccount.last_login_at ? new Date(tsAccount.last_login_at).toLocaleString('en-GB') : 'Never'}</strong>
+                  </div>
+                  {canEditWarning ? (
+                    <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '8px', padding: '12px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#92400E', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Platform Warning</div>
+                      <textarea value={warningDraft} onChange={e => setWarningDraft(e.target.value)} placeholder="Type a warning the client will see on their trading platform… (leave empty for none)" rows={2}
+                        style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #FCD34D', borderRadius: '6px', fontSize: '13px', outline: 'none', resize: 'vertical', fontFamily: 'Inter, sans-serif', background: '#fff', color: '#111827' }} />
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center' }}>
+                        <button onClick={saveWarning} style={{ padding: '7px 16px', background: '#B45309', border: 'none', borderRadius: '6px', color: '#fff', fontSize: '12px', fontWeight: '600', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>Save warning</button>
+                        {tsAccount.admin_warning && <button onClick={clearWarning} style={{ padding: '7px 16px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '6px', color: '#6B7280', fontSize: '12px', fontWeight: '600', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>Clear</button>}
+                        <span style={{ fontSize: '11px', color: tsAccount.admin_warning ? '#B45309' : '#9CA3AF' }}>{tsAccount.admin_warning ? '● Showing on client platform' : 'Not shown to client'}</span>
+                      </div>
+                    </div>
+                  ) : tsAccount.admin_warning ? (
+                    <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: '#991B1B' }}>⚠ Warning shown to client: {tsAccount.admin_warning}</div>
+                  ) : null}
                 </div>
 
                 {/* Trades feed */}
