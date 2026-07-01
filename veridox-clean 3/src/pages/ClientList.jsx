@@ -9,7 +9,6 @@ const COL_FILTERS_KEY = 'veridox-client-colfilters';
 // Per-column filter definitions (label + how to extract the searchable text from a row).
 const CLIENT_COLUMNS = [
   { label: 'Client', key: 'client', get: c => `${c.first_name || ''} ${c.last_name || ''} ${c.email || ''}` },
-  { label: 'Company', key: 'company', get: c => c.company_name || '' },
   { label: 'Country', key: 'country', get: c => c.country || '' },
   { label: 'Added', key: 'added', get: c => (c.created_at ? new Date(c.created_at).toLocaleDateString() : '') },
   { label: '', key: null },
@@ -95,9 +94,9 @@ export default function ClientList() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>Loading...</td></tr>
+              <tr><td colSpan={4} style={{ padding: '40px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>Loading...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={5} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>No clients found.</td></tr>
+              <tr><td colSpan={4} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>No clients found.</td></tr>
             ) : filtered.map(client => (
               <tr key={client.id} onClick={() => navigate(`/clients/${client.id}`)} style={{ borderTop: '1px solid #F1F5F9', cursor: 'pointer', background: 'white', transition: 'background 0.1s' }} onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'} onMouseLeave={e => e.currentTarget.style.background = 'white'}>
                 <td style={{ padding: '14px 20px' }}>
@@ -111,7 +110,6 @@ export default function ClientList() {
                     </div>
                   </div>
                 </td>
-                <td style={{ padding: '14px 20px', color: '#475569', fontSize: '13px', whiteSpace: 'nowrap' }}>{client.company_name}</td>
                 <td style={{ padding: '14px 20px', color: '#475569', fontSize: '13px' }}>{client.country}</td>
                 <td style={{ padding: '14px 20px', color: '#94A3B8', fontSize: '12px', whiteSpace: 'nowrap' }}>{new Date(client.created_at).toLocaleDateString()}</td>
                 <td style={{ padding: '14px 16px' }}><ChevronRight size={16} color="#CBD5E1" /></td>
