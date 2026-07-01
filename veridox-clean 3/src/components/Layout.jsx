@@ -13,7 +13,6 @@ const navGroups = [
     items: [
       { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/clients', icon: Users, label: 'Clients' },
-      { to: '/pipeline', icon: Kanban, label: 'KYC Pipeline' },
     ],
   },
   {
@@ -24,8 +23,6 @@ const navGroups = [
       { to: '/analytics', icon: BarChart2, label: 'Analytics' },
       { to: '/routing', icon: Zap, label: 'Smart Routing' },
       { to: '/cascading', icon: GitBranch, label: 'Cascading' },
-      { to: '/disputes', icon: ShieldAlert, label: 'Disputes' },
-      { to: '/fraud-rules', icon: ShieldX, label: 'Anti-Fraud' },
     ],
   },
   {
@@ -33,10 +30,7 @@ const navGroups = [
     icon: Building2,
     items: [
       { to: '/bonus-management', icon: Gift, label: 'Bonus Management' },
-      { to: '/ib-affiliate', icon: Network, label: 'IB / Affiliate' },
-      { to: '/financial-reports', icon: FileText, label: 'Financial Reports' },
       { to: '/withdrawal-approvals', icon: ArrowDownCircle, label: 'Withdrawals' },
-      { to: '/document-center', icon: FolderOpen, label: 'Document Center' },
       { to: '/communication-center', icon: MessageCircle, label: 'Communications' },
       { to: '/sales-crm', icon: Briefcase, label: 'Sales CRM' },
       { to: '/converted-clients', icon: UserCheck, label: 'Converted Clients' },
@@ -62,7 +56,7 @@ const mobileNavItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Home' },
   { to: '/clients', icon: Users, label: 'Clients' },
   { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions' },
-  { to: '/disputes', icon: ShieldAlert, label: 'Disputes' },
+  { to: '/converted-clients', icon: UserCheck, label: 'Clients+' },
   { to: '/analytics', icon: BarChart2, label: 'Analytics' },
 ];
 
