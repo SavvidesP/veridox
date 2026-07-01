@@ -105,6 +105,16 @@ function formatAmount(v) {
   return Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+const TX_COL_FILTERS_KEY = 'veridox-tx-colfilters';
+
+// Text used for per-column filtering (matches what's shown in the cell where it differs from the raw value).
+function cellText(key, t) {
+  if (key === 'created_date') return formatDate(t.created_date);
+  if (key === 'amount') return formatAmount(t.amount);
+  if (key === 'usd_amount') return formatAmount(t.usd_amount);
+  return String(t[key] ?? '');
+}
+
 const sectionLabel = (text) => (
   <div style={{ fontSize: '11px', fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>{text}</div>
 );
@@ -124,12 +134,20 @@ export default function Transactions() {
   const [selectedCols, setSelectedCols] = useState(ALL_EXPORT_COLUMNS.map(c => c.key));
   const [exportFilters, setExportFilters] = useState({ dateFrom: '', dateTo: '', brand: 'all', status: 'all', type: 'all', firstName: '', lastName: '' });
   const [exporting, setExporting] = useState(false);
+  // Per-column filters (client-side, refine the loaded page) — persist across refresh until cleared.
+  const [colFilters, setColFilters] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(TX_COL_FILTERS_KEY)) || {}; } catch { return {}; }
+  });
   const fileRef = useRef();
   const PAGE_SIZE = 50;
 
   const brands = [...new Set(transactions.map(t => t.brand_name).filter(Boolean))].sort();
 
   useEffect(() => { fetchTransactions(); }, [page, filterBrand, filterType, filterStatus]);
+
+  useEffect(() => {
+    try { localStorage.setItem(TX_COL_FILTERS_KEY, JSON.stringify(colFilters)); } catch { /* ignore */ }
+  }, [colFilters]);
 
   async function fetchTransactions() {
     setLoading(true);
@@ -290,6 +308,14 @@ export default function Transactions() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
+  // Apply per-column filters to the loaded page.
+  const displayed = transactions.filter(t => COLUMNS.every(col => {
+    const fv = (colFilters[col.key] || '').trim().toLowerCase();
+    return !fv || cellText(col.key, t).toLowerCase().includes(fv);
+  }));
+  const hasColFilters = Object.values(colFilters).some(v => (v || '').trim() !== '');
+  const clearColFilters = () => setColFilters({});
+
   // ── shared input style (matches Dashboard selects/inputs) ──
   const inputStyle = {
     padding: '7px 10px',
@@ -364,6 +390,12 @@ export default function Transactions() {
           <option value="Pending">Pending</option>
         </select>
 
+        {hasColFilters && (
+          <button onClick={clearColFilters} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: '5px', fontSize: '13px', fontWeight: '500', color: '#374151', cursor: 'pointer' }}>
+            <X size={13} /> Clear filters
+          </button>
+        )}
+
         {filterBrand !== 'all' && (
           <button
             onClick={() => downloadStatement(filterBrand)}
@@ -405,6 +437,14 @@ export default function Transactions() {
                 </th>
               ))}
             </tr>
+            <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
+              {COLUMNS.map(c => (
+                <th key={c.key + '-f'} style={{ padding: '0 16px 8px' }}>
+                  <input value={colFilters[c.key] || ''} onChange={e => setColFilters(f => ({ ...f, [c.key]: e.target.value }))} placeholder="Filter…"
+                    style={{ width: '100%', minWidth: '80px', boxSizing: 'border-box', padding: '5px 8px', border: '1px solid #E5E7EB', borderRadius: '5px', fontSize: '11px', fontWeight: '400', color: '#111827', background: '#fff', outline: 'none', textTransform: 'none', letterSpacing: 'normal' }} />
+                </th>
+              ))}
+            </tr>
           </thead>
           <tbody>
             {loading ? (
@@ -413,23 +453,23 @@ export default function Transactions() {
                   Loading…
                 </td>
               </tr>
-            ) : transactions.length === 0 ? (
+            ) : displayed.length === 0 ? (
               <tr>
                 <td colSpan={COLUMNS.length} style={{ padding: '48px', textAlign: 'center', color: '#D1D5DB', fontSize: '13px' }}>
-                  No transactions yet.{' '}
-                  <span
-                    style={{ color: '#111827', fontWeight: '500', cursor: 'pointer', textDecoration: 'underline' }}
-                    onClick={() => fileRef.current.click()}
-                  >
-                    Import your first file
-                  </span>
+                  {transactions.length === 0 ? (
+                    <>No transactions yet.{' '}
+                      <span style={{ color: '#111827', fontWeight: '500', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => fileRef.current.click()}>
+                        Import your first file
+                      </span>
+                    </>
+                  ) : 'No transactions match your column filters on this page.'}
                 </td>
               </tr>
-            ) : transactions.map((t, idx) => (
+            ) : displayed.map((t, idx) => (
               <tr
                 key={t.id}
                 onClick={() => navigate(`/transactions/${t.id}`)}
-                style={{ borderBottom: idx < transactions.length - 1 ? '1px solid #F3F4F6' : 'none', cursor: 'pointer', background: '#fff' }}
+                style={{ borderBottom: idx < displayed.length - 1 ? '1px solid #F3F4F6' : 'none', cursor: 'pointer', background: '#fff' }}
                 onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
                 onMouseLeave={e => e.currentTarget.style.background = '#fff'}
               >
