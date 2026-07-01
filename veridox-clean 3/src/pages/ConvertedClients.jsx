@@ -153,8 +153,33 @@ export default function ConvertedClients() {
 
   useEffect(() => { fetchConverted(); }, []);
 
-  async function fetchConverted() {
-    setLoading(true);
+  // Auto-refresh: re-fetch (silently) when transactions/leads change in real time,
+  // or when the tab regains focus — so newly imported deposits show up (and their
+  // PSP/method/processor values populate the filter dropdowns) without a manual reload.
+  useEffect(() => {
+    let debounce;
+    const refresh = () => { clearTimeout(debounce); debounce = setTimeout(() => fetchConverted({ silent: true }), 400); };
+
+    const channel = supabase
+      .channel('converted-clients-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales_leads' }, refresh)
+      .subscribe();
+
+    const onFocus = () => { if (document.visibilityState !== 'hidden') refresh(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+
+    return () => {
+      clearTimeout(debounce);
+      supabase.removeChannel(channel);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, []);
+
+  async function fetchConverted({ silent = false } = {}) {
+    if (!silent) setLoading(true);
     const { data: leads } = await supabase
       .from('sales_leads')
       .select('*')
