@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { Users, Plus, Trash2, X, Copy, Check, ChevronDown, KeyRound } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { ROLE_OPTIONS, ROLE_STYLE, roleLabel } from '../lib/roles';
 
 // Secondary client used ONLY to create invited users via signUp, without
 // touching the current admin's session (persistSession: false).
@@ -21,10 +22,7 @@ function genPassword() {
   return p + '!' + Math.floor(10 + Math.random() * 89);
 }
 
-const roleStyle = {
-  admin: { background: '#EEF2FF', color: '#4338CA' },
-  agent: { background: '#F0FDF4', color: '#15803D' },
-};
+const roleStyle = ROLE_STYLE;
 
 function CopyRow({ label, value }) {
   const [copied, setCopied] = useState(false);
@@ -50,7 +48,7 @@ export default function Settings() {
   const [showInvite, setShowInvite] = useState(false);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [role, setRole] = useState('agent');
+  const [role, setRole] = useState('conversion_agent');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [created, setCreated] = useState(null); // generated credentials to show
@@ -81,7 +79,7 @@ export default function Settings() {
   }
 
   function resetInvite() {
-    setFirstName(''); setLastName(''); setRole('agent'); setError(''); setCreated(null); setCreating(false);
+    setFirstName(''); setLastName(''); setRole('conversion_agent'); setError(''); setCreated(null); setCreating(false);
   }
 
   async function handleInvite() {
@@ -125,6 +123,7 @@ export default function Settings() {
 
   async function resetPassword(e, member) {
     e.stopPropagation();
+    if (member.id === user?.id) return; // never reset your own password here — it logs you out
     setResetingId(member.id);
     const { data, error } = await supabase.functions.invoke('reset-member-password', { body: { targetUserId: member.id } });
     setResetingId(null);
@@ -180,15 +179,14 @@ export default function Settings() {
                 <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                   {/* Role toggle */}
                   <div style={{ position: 'relative' }}>
-                    <select value={member.role || 'agent'} onChange={e => changeRole(member, e.target.value)}
-                      style={{ ...roleStyle[member.role] || roleStyle.agent, appearance: 'none', WebkitAppearance: 'none', border: 'none', borderRadius: '20px', padding: '4px 26px 4px 12px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', fontFamily: "'Inter', sans-serif", textTransform: 'capitalize' }}>
-                      <option value="admin">admin</option>
-                      <option value="agent">agent</option>
+                    <select value={member.role || 'conversion_agent'} onChange={e => changeRole(member, e.target.value)}
+                      style={{ ...(roleStyle[member.role] || roleStyle.agent), appearance: 'none', WebkitAppearance: 'none', border: 'none', borderRadius: '20px', padding: '4px 26px 4px 12px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                      {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                     <ChevronDown size={12} color="#6B7280" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
                   </div>
                   <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: member.active === false ? '#9CA3AF' : '#22C55E' }} title={member.active === false ? 'inactive' : 'active'} />
-                  <button onClick={e => resetPassword(e, member)} disabled={resetingId === member.id} title="Reset password" style={{ background: 'none', border: 'none', cursor: resetingId === member.id ? 'wait' : 'pointer', color: '#9CA3AF', padding: '2px', display: 'flex' }}>
+                  <button onClick={e => resetPassword(e, member)} disabled={resetingId === member.id || member.id === user?.id} title={member.id === user?.id ? "You can't reset your own password here" : 'Reset password'} style={{ background: 'none', border: 'none', cursor: (resetingId === member.id || member.id === user?.id) ? 'not-allowed' : 'pointer', color: '#9CA3AF', padding: '2px', display: 'flex', opacity: member.id === user?.id ? 0.35 : 1 }}>
                     <KeyRound size={14} />
                   </button>
                   <button onClick={() => removeMember(member)} disabled={member.id === user?.id} style={{ background: 'none', border: 'none', cursor: member.id === user?.id ? 'not-allowed' : 'pointer', color: '#D1D5DB', padding: '2px', opacity: member.id === user?.id ? 0.4 : 1 }}>
@@ -201,7 +199,7 @@ export default function Settings() {
         </div>
 
         <div style={{ marginTop: '12px', fontSize: '12px', color: '#9CA3AF', lineHeight: 1.5 }}>
-          <strong style={{ color: '#6B7280' }}>Admin</strong> sees all panels and every trading account. <strong style={{ color: '#6B7280' }}>Agents</strong> only see the trading accounts they assign to themselves.
+          <strong style={{ color: '#6B7280' }}>Admin / Manager</strong> sees everything. <strong style={{ color: '#6B7280' }}>Conversion</strong> roles work leads (Sales CRM); <strong style={{ color: '#6B7280' }}>Retention</strong> roles work converted clients. Managers see their whole department; agents see only what's assigned to them.
         </div>
       </div>
 
@@ -228,10 +226,12 @@ export default function Settings() {
                 </div>
                 <div style={{ marginBottom: '14px' }}>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>Role</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    {['agent', 'admin'].map(r => (
-                      <button key={r} onClick={() => setRole(r)} style={{ flex: 1, padding: '9px', borderRadius: '8px', border: `1px solid ${role === r ? '#6366F1' : '#E5E7EB'}`, background: role === r ? '#EEF2FF' : '#fff', color: role === r ? '#4338CA' : '#6B7280', fontSize: '13px', fontWeight: '600', cursor: 'pointer', textTransform: 'capitalize', fontFamily: "'Inter', sans-serif" }}>{r}</button>
-                    ))}
+                  <div style={{ position: 'relative' }}>
+                    <select value={role} onChange={e => setRole(e.target.value)}
+                      style={{ width: '100%', boxSizing: 'border-box', appearance: 'none', WebkitAppearance: 'none', padding: '10px 34px 10px 12px', border: '1px solid #E5E7EB', borderRadius: '8px', fontSize: '14px', color: '#111827', background: '#fff', outline: 'none', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                      {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    <ChevronDown size={14} color="#6B7280" style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
                   </div>
                 </div>
                 <div style={{ fontSize: '11px', color: '#9CA3AF', marginBottom: '16px' }}>Email, username and password are generated automatically. You'll get the credentials to hand over.</div>
