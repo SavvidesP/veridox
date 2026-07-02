@@ -11,6 +11,7 @@ const CLIENT_COLUMNS = [
   { label: 'Client', key: 'client', get: c => `${c.first_name || ''} ${c.last_name || ''} ${c.email || ''}` },
   { label: 'Country', key: 'country', get: c => c.country || '' },
   { label: 'Added', key: 'added', get: c => (c.created_at ? new Date(c.created_at).toLocaleDateString() : '') },
+  { label: 'Assigned To', key: 'assigned', get: c => c._assignedTo || '' },
   { label: '', key: null },
 ];
 
@@ -25,8 +26,27 @@ export default function ClientList() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    cachedQuery('clients', () => supabase.from('clients').select('*').order('created_at', { ascending: false }).then(r => r.data || [])).then(data => {
-      setClients(data);
+    cachedQuery('clients', () => supabase.from('clients').select('*').order('created_at', { ascending: false }).then(r => r.data || [])).then(async data => {
+      // Resolve the assigned agent for each client from its linked lead (retention agent
+      // preferred, else conversion agent), so the "Assigned To" column shows a real name.
+      const ids = data.map(c => c.id);
+      const assignedMap = {};
+      if (ids.length) {
+        const { data: leads } = await supabase.from('sales_leads')
+          .select('converted_client_id, assigned_to, assigned_agent_id, retention_agent_id')
+          .in('converted_client_id', ids);
+        const agentIds = [...new Set((leads || []).flatMap(l => [l.assigned_agent_id, l.retention_agent_id]).filter(Boolean))];
+        const profMap = {};
+        if (agentIds.length) {
+          const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', agentIds);
+          (profs || []).forEach(p => { profMap[p.id] = p.full_name; });
+        }
+        (leads || []).forEach(l => {
+          const name = profMap[l.retention_agent_id] || profMap[l.assigned_agent_id] || (l.assigned_to || '').trim() || null;
+          if (name && l.converted_client_id) assignedMap[l.converted_client_id] = name;
+        });
+      }
+      setClients(data.map(c => ({ ...c, _assignedTo: c.assigned_to || assignedMap[c.id] || '' })));
       setLoading(false);
     });
   }, []);
@@ -94,9 +114,9 @@ export default function ClientList() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={4} style={{ padding: '40px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>Loading...</td></tr>
+              <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>Loading...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={4} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>No clients found.</td></tr>
+              <tr><td colSpan={5} style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>No clients found.</td></tr>
             ) : filtered.map(client => (
               <tr key={client.id} onClick={() => navigate(`/clients/${client.id}`)} style={{ borderTop: '1px solid #F1F5F9', cursor: 'pointer', background: 'white', transition: 'background 0.1s' }} onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'} onMouseLeave={e => e.currentTarget.style.background = 'white'}>
                 <td style={{ padding: '14px 20px' }}>
@@ -112,6 +132,7 @@ export default function ClientList() {
                 </td>
                 <td style={{ padding: '14px 20px', color: '#475569', fontSize: '13px' }}>{client.country}</td>
                 <td style={{ padding: '14px 20px', color: '#94A3B8', fontSize: '12px', whiteSpace: 'nowrap' }}>{new Date(client.created_at).toLocaleDateString()}</td>
+                <td style={{ padding: '14px 20px', color: client._assignedTo ? '#475569' : '#CBD5E1', fontSize: '13px', whiteSpace: 'nowrap' }}>{client._assignedTo || '—'}</td>
                 <td style={{ padding: '14px 16px' }}><ChevronRight size={16} color="#CBD5E1" /></td>
               </tr>
             ))}
