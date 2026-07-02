@@ -14,7 +14,7 @@ export default function AddClient() {
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', company: '', country: '', industry: 'Forex', dob: '' });
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', country: '', dob: '', amount: '' });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,9 +25,8 @@ export default function AddClient() {
       last_name: form.lastName,
       email: form.email,
       phone: form.phone,
-      company_name: form.company,
       country: form.country,
-      industry: form.industry,
+      initial_balance: parseFloat(form.amount) || 0,
       status: 'pending',
       risk_level: 'medium',
     });
@@ -75,6 +74,7 @@ export default function AddClient() {
                 { label: 'Phone Number', key: 'phone', placeholder: '+357 99 000000', type: 'tel' },
                 { label: 'Date of Birth', key: 'dob', placeholder: '', type: 'date' },
                 { label: 'Country', key: 'country', placeholder: 'Cyprus', type: 'text', required: true },
+                { label: 'Amount (To be adjusted)', key: 'amount', placeholder: '0.00', type: 'number' },
               ].map(field => (
                 <div key={field.key}>
                   <label style={labelStyle}>{field.label}{field.required && <span style={{ color: '#E11D48' }}> *</span>}</label>
@@ -83,26 +83,7 @@ export default function AddClient() {
               ))}
             </div>
           </div>
-          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '24px', marginBottom: '24px' }}>
-            <div style={{ color: '#0F172A', fontSize: '13px', fontWeight: '700', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #F1F5F9' }}>Company Information</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-              <div>
-                <label style={labelStyle}>Company Name <span style={{ color: '#E11D48' }}>*</span></label>
-                <input required type="text" value={form.company} placeholder="TradeFast Ltd" onChange={e => setForm({ ...form, company: e.target.value })} style={inputStyle} onFocus={e => e.target.style.borderColor = '#6366F1'} onBlur={e => e.target.style.borderColor = '#E2E8F0'} />
-              </div>
-              <div>
-                <label style={labelStyle}>Industry</label>
-                <select value={form.industry} onChange={e => setForm({ ...form, industry: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
-                  <option>Forex</option>
-                  <option>Payments</option>
-                  <option>iGaming</option>
-                  <option>Crypto</option>
-                  <option>Other</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '24px' }}>
             <button type="submit" disabled={saving} style={{ background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', color: 'white', border: 'none', borderRadius: '8px', padding: '11px 24px', fontSize: '13px', fontWeight: '600', cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'Inter, sans-serif', opacity: saving ? 0.7 : 1 }}>
               {saving ? 'Saving...' : 'Add Client'}
             </button>
