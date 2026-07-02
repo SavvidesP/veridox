@@ -35,8 +35,10 @@ export default function AddClient() {
       setSaving(false);
     } else {
       invalidate('clients');
+      // Clear any saved column filters so the redirected Clients list always shows the new client.
+      try { localStorage.removeItem('veridox-client-colfilters'); } catch { /* ignore */ }
       setSubmitted(true);
-      setTimeout(() => navigate('/clients'), 2000);
+      setTimeout(() => navigate('/clients'), 1200);
     }
   };
 
